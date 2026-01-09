@@ -1,6 +1,3 @@
-// #define EVENTUS_THREAD_SAFE
-// #define EVENTUS_NO_THREADING
-#define EVENTUS_BUS_METHODS
 #include <eventus>
 #include <print>
 
@@ -12,12 +9,8 @@ int main(int argc, char** argv) {
         return true;
     });
 
-    eventus::publish_async(&b, "gabagool");
-    eventus::publish_async(&b, "something creative");
-
-    // while (true) {
-    _sleep(100);
-    // }
+    eventus::publish(&b, "gabagool");
+    eventus::publish(&b, "something creative");
 
     return 0;
 }
