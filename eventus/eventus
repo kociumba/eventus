@@ -1,0 +1,7 @@
+#ifndef EVENTUS
+#define EVENTUS
+
+// for library docs see this inner header
+#include "../eventus.h"
+
+#endif /* EVENTUS */
