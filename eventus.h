@@ -235,6 +235,12 @@ e_status publish_threaded(bus* b, EventT data);
 
 template <typename... EventTs>
 e_status publish_threaded_multi(bus* b, EventTs... data);
+
+template <typename EventT>
+e_status publish_async(bus* b, EventT data);
+
+template <typename... EventT>
+e_status publish_async_multi(bus* b, EventT... data);
 #endif
 
 // =-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
@@ -345,6 +351,16 @@ struct bus {
     template <typename... EventTs>
     e_status publish_threaded_multi(EventTs... data) {
         return eventus::publish_threaded_multi(this, std::move(data)...);
+    }
+
+    template <typename EventT>
+    e_status publish_async(EventT data) {
+        return eventus::publish_async(this, std::move(data));
+    }
+
+    template <typename... EventT>
+    e_status publish_async_multi(bus* b, EventT... data) {
+        return eventus::publish_async_multi(this, std::move(data)...);
     }
 #endif
 #endif
@@ -512,14 +528,14 @@ e_status publish_threaded(bus* b, EventT data) {
     return OK;
 }
 
-// publishes an events of types EventT..., executing subscribers on a remote thread
+// publishes events of types EventT..., executing subscribers on a remote thread
 template <typename... EventTs>
 e_status publish_threaded_multi(bus* b, EventTs... data) {
     (publish_threaded(b, std::move(data)), ...);
     return OK;
 }
 
-// publishes and event of type EventT, executing each subscriber on a remote thread
+// publishes an event of type EventT, executing each subscriber on a remote thread
 // this disregards subscriber priority and loses benefits the less work subscribers do,
 // this also does not stop event propagation on subscriber error
 template <typename EventT>
@@ -546,7 +562,7 @@ e_status publish_async(bus* b, EventT data) {
     return OK;
 }
 
-// publishes and events of types EventT..., executing each subscriber on a remote thread
+// publishes events of types EventT..., executing each subscriber on a remote thread
 // this disregards subscriber priority and loses benefits the less work subscribers do,
 // this also does not stop event propagation on subscriber error
 template <typename... EventT>
