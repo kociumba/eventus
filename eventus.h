@@ -1,4 +1,4 @@
-// Eventus version: 0.0.1
+// Eventus version: 0.0.2
 //
 // To use eventus you don't need to define an implementation macro but there are configuration macros
 // which you can define before including eventus:
@@ -417,6 +417,9 @@ e_status unsubscribe(bus* b, int64_t id) {
 
     if (sub_it != vec.end()) {
         vec.erase(sub_it);
+
+        detail::gc(b);
+
         return OK;
     }
 
@@ -435,6 +438,9 @@ inline e_status unsubscribe(bus* b, int64_t id) {
 
         if (new_end != vec.end()) {
             vec.erase(new_end, vec.end());
+
+            detail::gc(b);
+
             return OK;
         }
     }
@@ -453,6 +459,9 @@ e_status unsubscribe_event(bus* b) {
     }
 
     b->subs.erase(it);
+
+    detail::gc(b);
+
     return OK;
 }
 
