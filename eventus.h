@@ -8,14 +8,18 @@
 //  - #define EVENTUS_NO_THREADING    - excludes threaded publish methods
 //  - #define EVENTUS_SHORT_NAMESPACE - shortens the eventus:: namespace to ev::
 //
+// NOTE: when EVENTUS_NO_THREADING is not defined, EVENTUS_THREAD_SAFE is automatically defined due
+//  to requiering thread safety in the threading code
+//
 // The library is mostly designed to perform all the performance intensive operations like sorting
 // subscribers or garbage collection on subscription, this frees up publishing to be as performant
 // as possible
 //
-// If your standard library and compiler supports std::jthread eventus will also include basic
-// threaded publishing functions, these are very naive implementations spawning new threads for each
-// subscriber launched, you can disable these (see above, about config macros), if you choose to use
-// these you should link with your systems threads library
+// If your standard library and compiler supports std::jthread eventus will also include threaded
+// publishing functions, these use a thread pool that is automatically scaled to the undelaying
+// hardware, the functions postfixed with _threaded simply execute publishiing on a remote thread,
+// still executing subscribers concurently on it, while the functions with _async, run each subscriber
+// in a separate thread from the pool
 //
 // Basic usage example:
 //  struct my_event { int value; };
@@ -41,6 +45,7 @@
 #include <atomic>
 #include <concepts>
 #include <functional>
+#include <memory>
 #include <typeindex>
 #include <unordered_map>
 #include <vector>
@@ -48,15 +53,6 @@
 // =-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
 // =-   M A C R O   C H E C K S / D E F I N E S   -=
 // =-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
-
-// keeping this empty allows us to not stub the mutex with void* when thread safety is off
-#define mutex_scope(mutex)
-
-#if defined(EVENTUS_THREAD_SAFE)
-#include <mutex>
-#undef mutex_scope
-#define mutex_scope(mutex) std::lock_guard lock##__LINE__(mutex)
-#endif
 
 #define eventus_function std::move_only_function
 #if !defined(__cpp_lib_move_only_function)
@@ -89,8 +85,20 @@
 #endif
 
 #if defined(__cpp_lib_jthread) && !defined(EVENTUS_NO_THREADING)
+#include <condition_variable>
+#include <queue>
 #include <thread>
 #define EVENTUS_HAS_JTHREAD
+#define EVENTUS_THREAD_SAFE  // we need mutex and thread safety if are doing threaded
+#endif
+
+// keeping this empty allows us to not stub the mutex with void* when thread safety is off
+#define mutex_scope(mutex)
+
+#if defined(EVENTUS_THREAD_SAFE)
+#include <mutex>
+#undef mutex_scope
+#define mutex_scope(mutex) std::lock_guard lock##__LINE__(mutex)
 #endif
 
 #if defined(EVENTUS_SHORT_NAMESPACE)
@@ -233,12 +241,65 @@ e_status publish_threaded_multi(bus* b, EventTs... data);
 // =-              A P I   I M P L S              -=
 // =-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
 
+#if defined(EVENTUS_HAS_JTHREAD)
+namespace detail {
+struct thread_pool {
+    std::vector<std::jthread> workers;
+    std::queue<eventus_function<void()>> tasks;
+    std::mutex queue_mu;
+    std::condition_variable cv;
+    std::atomic<bool> stop{false};
+
+    thread_pool(size_t threads = std::max(1u, std::thread::hardware_concurrency())) {
+        for (size_t i = 0; i < threads; ++i) {
+            workers.emplace_back([this](std::stop_token st) {
+                while (!st.stop_requested() && !stop) {
+                    eventus_function<void()> task;
+                    {
+                        std::unique_lock lock(queue_mu);
+                        cv.wait(lock, [this, &st] {
+                            return stop || !tasks.empty() || st.stop_requested();
+                        });
+                        if ((stop || st.stop_requested()) && tasks.empty()) return;
+                        task = std::move(tasks.front());
+                        tasks.pop();
+                    }
+                    task();
+                }
+            });
+        }
+    }
+
+    ~thread_pool() {
+        stop = true;
+        cv.notify_all();
+    }
+
+    void enqueue(eventus_function<void()> task) {
+        {
+            mutex_scope(queue_mu);
+            tasks.push(std::move(task));
+        }
+        cv.notify_one();
+    }
+};
+}  // namespace detail
+#endif
+
 struct bus {
     std::unordered_map<std::type_index, std::vector<subscriber>> subs;
     std::atomic<int64_t> id_counter;
 
+    bus() = default;
+
 #if defined(EVENTUS_THREAD_SAFE)
     std::recursive_mutex mu;
+#endif
+
+#if defined(EVENTUS_HAS_JTHREAD)
+    detail::thread_pool pool;
+
+    explicit bus(size_t threads) : pool(threads) {};
 #endif
 
 #if defined(EVENTUS_BUS_METHODS)
@@ -435,21 +496,57 @@ e_status publish_multi(bus* b, EventTs... data) {
 }
 
 #if defined(EVENTUS_HAS_JTHREAD)
-// publishes an event of type EventT, executing subscribers on a remote threads
+// publishes an event of type EventT, executing subscribers on a remote thread
 template <typename EventT>
 e_status publish_threaded(bus* b, EventT data) {
-    std::jthread([b, data = std::move(data)]() mutable { publish(b, std::move(data)); }).detach();
+    b->pool.enqueue([b, data = std::move(data)]() mutable { publish(b, std::move(data)); });
     return OK;
 }
 
-// publishes an events of types EventT..., executing subscribers on a remote threads
+// publishes an events of types EventT..., executing subscribers on a remote thread
 template <typename... EventTs>
 e_status publish_threaded_multi(bus* b, EventTs... data) {
     (publish_threaded(b, std::move(data)), ...);
     return OK;
 }
-#endif
 
+// publishes and event of type EventT, executing each subscriber on a remote thread
+// this disregards subscriber priority and loses benefits the less work subscribers do,
+// this also does not stop event propagation on subscriber error
+template <typename EventT>
+e_status publish_async(bus* b, EventT data) {
+    mutex_scope(b->mu);
+
+    auto it = b->subs.find(typeid(EventT));
+    if (it == b->subs.end()) return EVENT_TYPE_NOT_REGISTERED;
+
+    auto& vec = it->second;
+    if (vec.empty()) return NO_SUBSCRIBERS_FOR_EVENT_TYPE;
+
+    // TODO: see if we may want to copy subs here
+    if (vec.size() == 1) {
+        b->pool.enqueue([&sub = vec[0], data = std::move(data)]() mutable { sub.invoke(&data); });
+    } else {
+        auto shared_data = std::make_shared<EventT>(std::move(data));
+        for (auto& sub : vec) {
+            b->pool.enqueue([&sub, shared_data]() { sub.invoke(shared_data.get()); });
+            // NOTE: 'break on false' logic is no longer possible here
+        }
+    }
+
+    return OK;
+}
+
+// publishes and events of types EventT..., executing each subscriber on a remote thread
+// this disregards subscriber priority and loses benefits the less work subscribers do,
+// this also does not stop event propagation on subscriber error
+template <typename... EventT>
+e_status publish_async_multi(bus* b, EventT... data) {
+    (publish_async(b, std::move(data)), ...);
+    return OK;
+}
+
+#endif
 }  // namespace eventus
 
 #endif /* EVENTUS_H */
