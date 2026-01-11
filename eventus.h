@@ -1,36 +1,41 @@
-// Eventus version: 0.0.2
+// eventus.h - v0.0.2 - kociumba 2026
 //
-// To use eventus you don't need to define an implementation macro but there are configuration macros
-// which you can define before including eventus:
-//  - #define EVENTUS_THREAD_SAFE     - makes eventus thread safe(duh) but somewhat hinders performance
-//  - #define EVENTUS_BUS_METHODS     - includes methods on the main bus type, for oop like usage
-//  - #define EVENTUS_NO_BUS_GC       - disables gc of empty events and types in the bus
-//  - #define EVENTUS_NO_THREADING    - excludes threaded publish methods
-//  - #define EVENTUS_SHORT_NAMESPACE - shortens the eventus:: namespace to ev::
+// INFO:
+//  To use eventus you don't need to define an implementation macro but there are configuration macros
+//  which you can define before including eventus:
+//      - #define EVENTUS_THREAD_SAFE     - makes eventus thread safe(duh) but somewhat hinders performance
+//      - #define EVENTUS_BUS_METHODS     - includes methods on the main bus type, for oop like usage
+//      - #define EVENTUS_NO_BUS_GC       - disables gc of empty events and types in the bus
+//      - #define EVENTUS_NO_THREADING    - excludes threaded publish methods
+//      - #define EVENTUS_SHORT_NAMESPACE - shortens the eventus:: namespace to ev::
 //
 // NOTE: when EVENTUS_NO_THREADING is not defined, EVENTUS_THREAD_SAFE is automatically defined due
 //  to requiering thread safety in the threading code
 //
-// The library is mostly designed to perform all the performance intensive operations like sorting
-// subscribers or garbage collection on subscription, this frees up publishing to be as performant
-// as possible
+//  The library is mostly designed to perform all the performance intensive operations like sorting
+//  subscribers or garbage collection on subscription, this frees up publishing to be as performant
+//  as possible
 //
-// If your standard library and compiler supports std::jthread eventus will also include threaded
-// publishing functions, these use a thread pool that is automatically scaled to the undelaying
-// hardware, the functions postfixed with _threaded simply execute publishiing on a remote thread,
-// still executing subscribers concurently on it, while the functions with _async, run each subscriber
-// in a separate thread from the pool
+//  If your standard library and compiler supports std::jthread eventus will also include threaded
+//  publishing functions, these use a thread pool that is automatically scaled to the undelaying
+//  hardware, the functions postfixed with _threaded simply execute publishiing on a remote thread,
+//  still executing subscribers concurently on it, while the functions with _async, run each subscriber
+//  in a separate thread from the pool
 //
-// Basic usage example:
-//  struct my_event { int value; };
+//  Basic usage example:
+//      struct my_event { int value; };
 //
-//  eventus::bus b;
-//  eventus::subscribe<my_event>(&b, [](my_event* e) {
-//      std::printf("Event received: %d\n", e->value);
-//      return true; // continue propagation
-//  });
+//      eventus::bus b;
+//      eventus::subscribe<my_event>(&b, [](my_event* e) {
+//          std::printf("Event received: %d\n", e->value);
+//          return true; // continue propagation
+//      });
 //
-//  eventus::publish(&b, my_event{42});
+//      eventus::publish(&b, my_event{42});
+//
+// LICENSE
+//
+//   See end of file for license information.
 
 #ifndef EVENTUS_H
 #define EVENTUS_H
@@ -575,3 +580,30 @@ e_status publish_async_multi(bus* b, EventT... data) {
 }  // namespace eventus
 
 #endif /* EVENTUS_H */
+
+/*
+------------------------------------------------------------------------------
+This software is available under the MIT license.
+------------------------------------------------------------------------------
+MIT License
+
+Copyright (c) 2026 kociumba
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+*/
