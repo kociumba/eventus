@@ -1,4 +1,4 @@
-// eventus.h - v0.0.2 - kociumba 2026
+// eventus.h - v0.0.3 - kociumba 2026
 //
 // INFO:
 //  To use eventus you don't need to define an implementation macro but there are configuration macros
@@ -123,6 +123,22 @@ enum e_status {
     NO_SUBSCRIBER_WITH_ID,
 };
 
+// use to get a string representation of an eventus state value
+inline const char* status_string(e_status s) {
+    switch (s) {
+        case OK:
+            return "OK";
+        case EVENT_TYPE_NOT_REGISTERED:
+            return "EVENT_TYPE_NOT_REGISTERED";
+        case NO_SUBSCRIBERS_FOR_EVENT_TYPE:
+            return "NO_SUBSCRIBERS_FOR_EVENT_TYPE";
+        case NO_SUBSCRIBER_WITH_ID:
+            return "NO_SUBSCRIBER_WITH_ID";
+        default:
+            return "invalid eventus::e_status value";
+    }
+}
+
 using invoke_fn = bool (*)(void* callback, void* event);
 
 template <typename EventT>
@@ -168,9 +184,7 @@ struct subscriber {
     }
 
     ~subscriber() {
-        if (callback_storage && deleter) {
-            deleter(callback_storage);
-        }
+        if (callback_storage && deleter) { deleter(callback_storage); }
     }
 
     subscriber(subscriber&& other) noexcept
@@ -185,9 +199,7 @@ struct subscriber {
 
     subscriber& operator=(subscriber&& other) noexcept {
         if (this != &other) {
-            if (callback_storage && deleter) {
-                deleter(callback_storage);
-            }
+            if (callback_storage && deleter) { deleter(callback_storage); }
             callback_storage = other.callback_storage;
             invoker = other.invoker;
             deleter = other.deleter;
@@ -428,9 +440,7 @@ e_status unsubscribe(bus* b, int64_t id) {
     mutex_scope(b->mu);
 
     auto it = b->subs.find(typeid(EventT));
-    if (it == b->subs.end()) {
-        return EVENT_TYPE_NOT_REGISTERED;
-    }
+    if (it == b->subs.end()) { return EVENT_TYPE_NOT_REGISTERED; }
 
     auto& vec = it->second;
     auto sub_it =
@@ -475,9 +485,7 @@ e_status unsubscribe_event(bus* b) {
     mutex_scope(b->mu);
 
     auto it = b->subs.find(typeid(EventT));
-    if (it == b->subs.end()) {
-        return EVENT_TYPE_NOT_REGISTERED;
-    }
+    if (it == b->subs.end()) { return EVENT_TYPE_NOT_REGISTERED; }
 
     b->subs.erase(it);
 
@@ -499,19 +507,13 @@ e_status publish(bus* b, EventT data) {
     mutex_scope(b->mu);
 
     auto it = b->subs.find(typeid(EventT));
-    if (it == b->subs.end()) {
-        return EVENT_TYPE_NOT_REGISTERED;
-    }
+    if (it == b->subs.end()) { return EVENT_TYPE_NOT_REGISTERED; }
 
     auto& vec = it->second;
-    if (vec.empty()) {
-        return NO_SUBSCRIBERS_FOR_EVENT_TYPE;
-    }
+    if (vec.empty()) { return NO_SUBSCRIBERS_FOR_EVENT_TYPE; }
 
     for (auto& sub : vec) {
-        if (!sub.invoke(&data)) {
-            break;
-        }
+        if (!sub.invoke(&data)) { break; }
     }
 
     return OK;
