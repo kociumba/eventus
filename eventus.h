@@ -95,6 +95,9 @@
 #include <thread>
 #define EVENTUS_HAS_JTHREAD
 #define EVENTUS_THREAD_SAFE  // we need mutex and thread safety if are doing threaded
+#else
+#warning \
+    "std::jthread is not availible on your compiler or STL, threading related functionality will not be enabled"
 #endif
 
 // keeping this empty allows us to not stub the mutex with void* when thread safety is off
