@@ -7,6 +7,8 @@ bool sub_func(const char** data) {
 }
 
 int main(int argc, char** argv) {
+    std::println("=== {} ===\n", __FILE__);
+
     auto b = eventus::bus();
 
     // Lambda subscriber (explicit type or auto works)
@@ -23,6 +25,8 @@ int main(int argc, char** argv) {
 
     std::println("\nPublishing 'something creative':");
     eventus::publish(&b, "something creative");
+
+    std::println("\n");
 
     return 0;
 }

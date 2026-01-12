@@ -7,6 +7,8 @@ struct ModifiableEvent {
 };
 
 int main() {
+    std::println("=== {} ===\n", __FILE__);
+
     auto b = eventus::bus();
 
     // Register subscribers in MIXED order to demonstrate that priority overrides registration order
@@ -104,7 +106,7 @@ int main() {
     std::println(
         "Execution order: High(100) -> Med-High(50) -> Med(0) -> Low(-10) -> Low(-10) -> "
         "Lowest(-50)");
-    std::println("Any handler returning false stops propagation to lower priorities");
+    std::println("Any handler returning false stops propagation to lower priorities\n\n");
 
     return 0;
 }

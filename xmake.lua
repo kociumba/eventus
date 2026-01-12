@@ -1,6 +1,6 @@
 add_rules("mode.debug", "mode.release")
 
-set_languages("cxx23")
+set_languages("cxxlatest")
 
 target("eventus")
     set_kind("headeronly")
@@ -9,12 +9,13 @@ target("eventus")
 
 
 for _, file in ipairs(os.files("examples/*.cpp")) do
-local name = path.basename(file)
+    local name = path.basename(file)
 
-target(name)
-    set_kind("binary")
-    set_default(false)
-    add_files(file)
-    add_deps("eventus")
-    add_cxxflags("-Wall")
+    target(name)
+        set_kind("binary")
+        set_group("examples")
+        set_default(false)
+        add_files(file)
+        add_deps("eventus")
+        add_cxxflags("-Wall")
 end

@@ -10,21 +10,28 @@ struct AnotherEvent {
 };
 
 int main() {
+    std::println("=== {} ===\n", __FILE__);
+
     auto b = eventus::bus();
 
+    int64_t subs[3];
+    int id1 = 0;
+    int id2 = 1;
+    int id3 = 2;
+
     // Subscribe multiple handlers to CleanupEvent
-    auto id1 = eventus::subscribe<CleanupEvent>(&b, [](CleanupEvent* e) {
-        std::println("  Subscriber 1 (ID: ?): value = {}", e->value);
+    subs[id1] = eventus::subscribe<CleanupEvent>(&b, [&](CleanupEvent* e) {
+        std::println("  Subscriber 1 (ID: {}): value = {}", subs[id1], e->value);
         return true;
     });
 
-    auto id2 = eventus::subscribe<CleanupEvent>(&b, [](CleanupEvent* e) {
-        std::println("  Subscriber 2 (ID: ?): value = {}", e->value);
+    subs[id2] = eventus::subscribe<CleanupEvent>(&b, [&](CleanupEvent* e) {
+        std::println("  Subscriber 2 (ID: {}): value = {}", subs[id2], e->value);
         return true;
     });
 
-    auto id3 = eventus::subscribe<CleanupEvent>(&b, [](CleanupEvent* e) {
-        std::println("  Subscriber 3 (ID: ?): value = {}", e->value);
+    subs[id3] = eventus::subscribe<CleanupEvent>(&b, [&](CleanupEvent* e) {
+        std::println("  Subscriber 3 (ID: {}): value = {}", subs[id3], e->value);
         return true;
     });
 
@@ -35,19 +42,19 @@ int main() {
     });
 
     std::println("=== Initial State: All subscribers active ===");
-    std::println("Subscriber IDs: {}, {}, {}\n", id1, id2, id3);
+    std::println("Subscriber IDs: {}, {}, {}\n", subs[id1], subs[id2], subs[id3]);
     eventus::publish(&b, CleanupEvent{420});
     eventus::publish(&b, AnotherEvent{"Still here"});
 
     // Unsubscribe one by ID
-    std::println("\n=== Unsubscribe Subscriber 2 (ID: {}) ===", id2);
-    auto status = eventus::unsubscribe<CleanupEvent>(&b, id2);
+    std::println("\n=== Unsubscribe Subscriber 2 (ID: {}) ===", subs[id2]);
+    auto status = eventus::unsubscribe<CleanupEvent>(&b, subs[id2]);
     std::println("Status: {}\n", eventus::status_string(status));
     eventus::publish(&b, CleanupEvent{69});
 
-    // Unsubscribe another by ID
-    std::println("\n=== Unsubscribe Subscriber 1 (ID: {}) ===", id1);
-    status = eventus::unsubscribe<CleanupEvent>(&b, id1);
+    // Unsubscribe another by ID without event type
+    std::println("\n=== Unsubscribe Subscriber 1 (ID: {}) ===", subs[id1]);
+    status = eventus::unsubscribe(&b, subs[id1]);
     std::println("Status: {}\n", eventus::status_string(status));
     eventus::publish(&b, CleanupEvent{2137});
 
@@ -67,7 +74,7 @@ int main() {
     std::println("unsubscribe<T>: Removes specific subscriber by ID");
     std::println("unsubscribe_event<T>: Removes all subscribers for event type");
     std::println("Other event types remain unaffected");
-    std::println("unsubscribe_all: clears all subscribers and events in the bus");
+    std::println("unsubscribe_all: clears all subscribers and events in the bus\n\n");
 
     return 0;
 }

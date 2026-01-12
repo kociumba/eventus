@@ -14,6 +14,8 @@ struct EventC {
 };
 
 int main() {
+    std::println("=== {} ===\n", __FILE__);
+
     auto b = eventus::bus();
 
     // Multi-subscribe: ONE handler for MULTIPLE event types
@@ -75,7 +77,7 @@ int main() {
     std::println("subscribe_multi: One handler for multiple event types");
     std::println("publish_multi: Publish multiple events in one call");
     std::println("Multi-subscribers can be unsubscribed per event type");
-    std::println("Each event type maintains its own subscriber list");
+    std::println("Each event type maintains its own subscriber list\n\n");
 
     return 0;
 }

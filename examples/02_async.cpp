@@ -1,7 +1,6 @@
-#include <eventus.h>
-#include <chrono>
+#include <eventus>
 #include <print>
-#include <thread>
+#include "common.h"
 
 struct message {
     std::string content;
@@ -9,6 +8,8 @@ struct message {
 };
 
 int main(int argc, char** argv) {
+    std::println("=== {} ===\n", __FILE__);
+
     // Custom thread pool size: bus(thread_pool_size)
     auto b = eventus::bus();
 
@@ -22,7 +23,7 @@ int main(int argc, char** argv) {
                          msg->content,
                          msg->id,
                          std::this_thread::get_id());
-            _sleep(50);
+            ev_sleep(50);
             return true;
         },
         5);
@@ -35,7 +36,7 @@ int main(int argc, char** argv) {
                          msg->content,
                          msg->id,
                          std::this_thread::get_id());
-            _sleep(50);
+            ev_sleep(50);
             return true;
         },
         10);
@@ -47,14 +48,14 @@ int main(int argc, char** argv) {
     std::println("=== publish_threaded: Sequential on single worker thread ===");
     std::println("Expected: Both handlers on same worker thread, B before A\n");
     eventus::publish_threaded(&b, message{"First message", 69});
-    _sleep(150);
+    ev_sleep(150);
 
     // publish_async: Each handler executes on its OWN worker thread IN PARALLEL
     // Handlers still respect priority but run simultaneously
     std::println("\n=== publish_async: Parallel execution on separate threads ===");
     std::println("Expected: Handlers on different threads, may interleave output\n");
     eventus::publish_async(&b, message{"Second message", 420});
-    _sleep(150);
+    ev_sleep(150);
 
     // publish_threaded_multi: Each EVENT gets its own worker thread
     // Handlers for each event still execute sequentially, but events run in parallel
@@ -62,12 +63,12 @@ int main(int argc, char** argv) {
     std::println("Expected: Two events on different threads, each event's handlers sequential\n");
     eventus::publish_threaded_multi(
         &b, message{"Third message", 2137}, message{"Fourth message", 1337});
-    _sleep(200);
+    ev_sleep(200);
 
     std::println("\n=== Summary ===");
     std::println("publish_threaded: One worker thread, handlers sequential");
     std::println("publish_async: Multiple worker threads, handlers parallel");
-    std::println("publish_threaded_multi: One worker per event, handlers sequential per event");
+    std::println("publish_threaded_multi: One worker per event, handlers sequential per event\n\n");
 
     return 0;
 }
