@@ -36,13 +36,13 @@ jobs:
           xrepo install -y llvm ${{ matrix.runner.ver }}
           echo "LLVM_PATH=$(xrepo fetch --sdk llvm ${{ matrix.runner.ver }} | grep 'sdk:' | awk '{print $2}')" >> $GITHUB_ENV
 
+      - name: set xmake toolchain (macos)
+        if: matrix.runner.os == 'macos-latest'
+        run: xmake f -v --toolchain=${{ matrix.runner.cmp }} --sdk=$LLVM_PATH
+
       - name: set xmake toolchain
-        run: |
-          if ([ "${{ matrix.runner.os }}" == "macos-latest" ]) then
-            xmake f -v --toolchain=${{ matrix.runner.cmp }} --sdk=$LLVM_PATH
-          else
-            xmake f -v --toolchain=${{ matrix.runner.cmp }}
-          fi
+        if: matrix.runner.os != 'macos-latest'
+        run: xmake f -v --toolchain=${{ matrix.runner.cmp }}
 
       - name: build examples
         run: xmake b -v -g examples
