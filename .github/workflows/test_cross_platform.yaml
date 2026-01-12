@@ -18,7 +18,7 @@ jobs:
           [
             { os: ubuntu-latest, cmp: gcc-14 },
             { os: windows-latest, cmp: msvc },
-            { os: macos-latest, cmp: clang },
+            { os: macos-latest, cmp: clang-19 },
           ]
 
     steps:
