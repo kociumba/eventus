@@ -38,7 +38,7 @@ jobs:
 
       - name: set xmake toolchain
         run: |
-          if [ "${{ matrix.runner.os }}" == "macos-latest" ]; then
+          if ([ "${{ matrix.runner.os }}" == "macos-latest" ]) then
             xmake f -v --toolchain=${{ matrix.runner.cmp }} --sdk=$LLVM_PATH
           else
             xmake f -v --toolchain=${{ matrix.runner.cmp }}
