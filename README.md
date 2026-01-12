@@ -8,7 +8,7 @@ It is cross-platform and only requires a c++20/23 compatible compiler and the ST
 
 To run any of the examples yourself:
 1. Clone the repo
-2. Run: `xmake r [exmaple_filename]` (`xmake r 04_propagation`)
+2. Run: `xmake r [exmaple_filename]` (eg. `xmake r 04_propagation`)
 
 Quick example:
 

@@ -18,7 +18,7 @@ jobs:
           [
             { os: ubuntu-latest, cmp: gcc-14 },
             { os: windows-latest, cmp: msvc },
-            { os: macos-latest, cmp: clang-19 },
+            { os: macos-latest, cmp: clang, ver: "19.1.1" },
           ]
 
     steps:
@@ -30,8 +30,19 @@ jobs:
         with:
           xmake-version: latest
 
+      - name: install llvm toolchain (macos)
+        if: matrix.runner.os == 'macos-latest'
+        run: |
+          xrepo install -y llvm ${{ matrix.runner.ver }}
+          echo "LLVM_PATH=$(xrepo fetch --sdk llvm ${{ matrix.runner.ver }} | grep 'sdk:' | awk '{print $2}')" >> $GITHUB_ENV
+
       - name: set xmake toolchain
-        run: xmake f -v --toolchain=${{ matrix.runner.cmp }}
+        run: |
+          if [ "${{ matrix.runner.os }}" == "macos-latest" ]; then
+            xmake f -v --toolchain=${{ matrix.runner.cmp }} --sdk=$LLVM_PATH
+          else
+            xmake f -v --toolchain=${{ matrix.runner.cmp }}
+          fi
 
       - name: build examples
         run: xmake b -v -g examples
