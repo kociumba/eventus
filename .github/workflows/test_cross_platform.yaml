@@ -1,0 +1,41 @@
+name: test examples cross-platform
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: run examples on ${{ matrix.runner.os }}
+    runs-on: ${{ matrix.runner.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        runner:
+          [
+            { os: ubuntu-latest, cmp: gcc-14 },
+            { os: windows-latest, cmp: msvc },
+            { os: macos-latest, cmp: clang },
+          ]
+
+    steps:
+      - name: checkout
+        uses: actions/checkout@v4
+
+      - name: setup xmake
+        uses: xmake-io/github-action-setup-xmake@v1
+        with:
+          xmake-version: latest
+
+      - name: set xmake toolchain
+        run: xmake f --toolchain=${{ matrix.runner.cmp }}
+
+      - name: build examples
+        run: xmake b -g examples
+
+      - name: run examples
+        run: xmake r -g examples
+        timeout-minutes: 2
