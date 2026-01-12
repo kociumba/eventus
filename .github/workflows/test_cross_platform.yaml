@@ -31,10 +31,10 @@ jobs:
           xmake-version: latest
 
       - name: set xmake toolchain
-        run: xmake f --toolchain=${{ matrix.runner.cmp }}
+        run: xmake f -v --toolchain=${{ matrix.runner.cmp }}
 
       - name: build examples
-        run: xmake b -g examples
+        run: xmake b -v -g examples
 
       - name: run examples
         run: xmake r -g examples
