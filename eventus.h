@@ -1,4 +1,4 @@
-// eventus.h - v0.0.3 - kociumba 2026
+// eventus.h - v0.0.4 - kociumba 2026
 //
 // INFO:
 //  To use eventus you don't need to define an implementation macro but there are configuration macros
@@ -461,7 +461,7 @@ e_status unsubscribe(bus* b, int64_t id) {
 inline e_status unsubscribe(bus* b, int64_t id) {
     mutex_scope(b->mu);
 
-    for (auto it = b->subs.begin(); it != b->subs.end();) {
+    for (auto it = b->subs.begin(); it != b->subs.end(); ++it) {  // Increment here
         auto& vec = it->second;
 
         auto new_end = std::remove_if(
