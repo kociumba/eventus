@@ -34,7 +34,7 @@ jobs:
         if: matrix.runner.os == 'macos-latest'
         uses: KyleMayes/install-llvm-action@v2
         with:
-          version: "21"
+          version: "20"
 
       - name: set xmake toolchain
         run: xmake f -v --toolchain=${{ matrix.runner.cmp }}
