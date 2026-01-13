@@ -32,9 +32,9 @@ jobs:
 
       - name: install llvm toolchain (macos)
         if: matrix.runner.os == 'macos-latest'
-        uses: egor-tensin/setup-clang@v2
+        uses: KyleMayes/install-llvm-action@v2
         with:
-          version: latest
+          version: "21"
 
       - name: set xmake toolchain
         run: xmake f -v --toolchain=${{ matrix.runner.cmp }}
