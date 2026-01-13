@@ -38,7 +38,7 @@ jobs:
 
       - name: set xmake toolchain (macos)
         if: matrix.runner.os == 'macos-latest'
-        run: \
+        run: |
           SDK_PATH=$(xcrun --show-sdk-path)
           xmake f -v --toolchain=${{ matrix.runner.cmp }} --sdk="$SDK_PATH" --cxflags="-isysroot $SDK_PATH" --ldflags="-isysroot $SDK_PATH -L$SDK_PATH/usr/lib"
 
