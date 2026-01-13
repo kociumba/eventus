@@ -32,16 +32,11 @@ jobs:
 
       - name: install llvm toolchain (macos)
         if: matrix.runner.os == 'macos-latest'
-        run: |
-          xrepo install -y llvm
-          echo "LLVM_PATH=$(xrepo fetch --sdk llvm | grep 'sdk:' | awk '{print $2}')" >> $GITHUB_ENV
-
-      - name: set xmake toolchain (macos)
-        if: matrix.runner.os == 'macos-latest'
-        run: xmake f -v --toolchain=${{ matrix.runner.cmp }} --sdk=$LLVM_PATH
+        uses: egor-tensin/setup-clang@v2
+        with:
+          version: latest
 
       - name: set xmake toolchain
-        if: matrix.runner.os != 'macos-latest'
         run: xmake f -v --toolchain=${{ matrix.runner.cmp }}
 
       - name: build examples
