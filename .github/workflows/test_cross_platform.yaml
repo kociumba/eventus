@@ -36,7 +36,12 @@ jobs:
         with:
           version: "20"
 
+      - name: set xmake toolchain (macos)
+        if: matrix.runner.os == 'macos-latest'
+        run: xmake f -v --toolchain=${{ matrix.runner.cmp }} --sdk=$(xcrun --show-sdk-path) --cxflags="-isysroot $(xcrun --show-sdk-path)"
+
       - name: set xmake toolchain
+        if: matrix.runner.os != 'macos-latest'
         run: xmake f -v --toolchain=${{ matrix.runner.cmp }}
 
       - name: build examples
