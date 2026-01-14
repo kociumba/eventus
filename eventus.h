@@ -41,9 +41,6 @@
 #ifndef EVENTUS_H
 #define EVENTUS_H
 
-// testing
-#define EVENTUS_DEBUG_LOG
-
 // =-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
 // =-               I N C L U D E S               -=
 // =-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
@@ -64,17 +61,20 @@
 // =-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
 
 #if defined(EVENTUS_DEBUG_LOG)
+#include <chrono>
+#include <format>
 #include <iostream>
 #include <string>
 #include <string_view>
-#define ev_log(log_func, data) log_func(data)
+#define ev_log(bus_ptr, ...) \
+    if ((bus_ptr)->_log) { (bus_ptr)->_log(ev_log_data(__VA_ARGS__)); }
 
 #ifdef __GNUC__
 #include <cxxabi.h>
 #endif
 
 #else
-#define ev_log(log_func, data)
+#define ev_log(log_func, ...)
 #endif
 
 #define eventus_function std::move_only_function
@@ -171,13 +171,22 @@ enum ev_log_level {
 
 struct ev_log_data {
     ev_log_level level;
-    bool has_sub_id;
-    int64_t id;
-    std::string_view msg;
-    bool has_event_type_info;
-    std::type_index event_type;
+    std::string msg;
+    bool has_event_type_info = false;
+    std::type_index event_type = typeid(void);
+    bool has_sub_id = false;
+    int64_t id = -1;
 
-    std::string_view get_event_type_name() const {
+    ev_log_data(ev_log_level l,
+                std::string msg,
+                std::type_index event_t = typeid(void),
+                int64_t id = -1)
+        : level(l), msg(msg), event_type(event_t), id(id) {
+        has_event_type_info = event_type != typeid(void);
+        has_sub_id = id != -1;
+    }
+
+    std::string get_event_type_name() const {
         if (!has_event_type_info) { return "N/A"; }
 
         const char* mangled_name = event_type.name();
@@ -186,10 +195,34 @@ struct ev_log_data {
         int status = 0;
         std::unique_ptr<char, void (*)(void*)> res{
             abi::__cxa_demangle(mangled_name, nullptr, nullptr, &status), std::free};
-        return (status == 0) ? res.get() : mangled_name;
+        return (status == 0) ? std::string(res.get()) : std::string(mangled_name);
 #else
-        return mangled_name;
+        return std::string(mangled_name);
 #endif
+    }
+
+    // prforms {...} formatting on the log data, only supports specific named placeholders
+    std::string format() const {
+        std::string result = msg;
+
+        if (has_event_type_info) {
+            size_t pos = 0;
+            while ((pos = result.find("{event}", pos)) != std::string::npos) {
+                result.replace(pos, 7, get_event_type_name());
+                pos += get_event_type_name().length();
+            }
+        }
+
+        if (has_sub_id) {
+            std::string id_str = std::to_string(id);
+            size_t pos = 0;
+            while ((pos = result.find("{id}", pos)) != std::string::npos) {
+                result.replace(pos, 4, id_str);
+                pos += id_str.length();
+            }
+        }
+
+        return result;
     }
 };
 #endif
@@ -321,7 +354,13 @@ using log_func = eventus_function<void(ev_log_data)>;
 inline void ev_default_log_func(ev_log_data data) {
     std::string buf;
     bool abort = false;
-    buf.reserve(128);
+    buf.reserve(256);
+
+    buf += "[";
+    buf += std::format(
+        "{:%Y-%m-%d %H:%M:%S}",
+        std::chrono::time_point_cast<std::chrono::seconds>(std::chrono::system_clock::now()));
+    buf += "] ";
 
     switch (data.level) {
         case DEBUG:
@@ -342,17 +381,7 @@ inline void ev_default_log_func(ev_log_data data) {
             break;
     }
 
-    buf += data.msg;
-
-    if (data.has_event_type_info) {
-        buf += " for event: ";
-        buf += data.get_event_type_name();
-    }
-
-    if (data.has_sub_id) {
-        buf += " for subscriber: ";
-        buf += std::to_string(data.id);
-    }
+    buf += data.format();
 
     std::cout << buf << std::endl;
 
@@ -498,13 +527,14 @@ struct bus {
 // holds implementation details but is not hidden, you can freely use these
 namespace detail {
 
-// performs garbage collection on the bus,
+// performs garbage collection on the bus
 inline void gc(bus* b) {
 #if !defined(EVENTUS_NO_BUS_GC)
     mutex_scope(b->mu);
 
     for (auto it = b->subs.begin(); it != b->subs.end();) {
         if (it->second.empty()) {
+            ev_log(b, DEBUG, "removed empty event: {event} from bus", it->first);
             it = b->subs.erase(it);
         } else {
             ++it;
@@ -531,6 +561,7 @@ int64_t subscribe(bus* b, F&& func, int32_t priority) {
     });
 
     detail::gc(b);
+    ev_log(b, INFO, "Successfully subscribed to {event} with id: {id}", typeid(EventT), id);
 
     return id;
 }
@@ -552,7 +583,16 @@ ev_status unsubscribe(bus* b, int64_t id) {
     mutex_scope(b->mu);
 
     auto it = b->subs.find(typeid(EventT));
-    if (it == b->subs.end()) { return EVENT_TYPE_NOT_REGISTERED; }
+    if (it == b->subs.end()) {
+        ev_log(b,
+               ERROR,
+               "Event: {event} is not registered in the bus, can not unsubscribe id: {id} from "
+               "nonexistant event",
+               typeid(EventT),
+               id);
+
+        return EVENT_TYPE_NOT_REGISTERED;
+    }
 
     auto& vec = it->second;
     auto sub_it =
@@ -562,9 +602,12 @@ ev_status unsubscribe(bus* b, int64_t id) {
         vec.erase(sub_it);
 
         detail::gc(b);
+        ev_log(b, INFO, "Successfully unsubscribed from {event} with id: {id}", typeid(EventT), id);
 
         return OK;
     }
+
+    ev_log(b, WARNING, "No subscriber with id: {id} registered to {event}", typeid(EventT), id);
 
     return NO_SUBSCRIBERS_FOR_EVENT_TYPE;
 }
@@ -583,10 +626,13 @@ inline ev_status unsubscribe(bus* b, int64_t id) {
             vec.erase(new_end, vec.end());
 
             detail::gc(b);
+            ev_log(b, INFO, "Successfully unsubscribed from {event} with id: {id}", it->first, id);
 
             return OK;
         }
     }
+
+    ev_log(b, WARNING, "No subscriber with id: {id} in the bus", typeid(void), id);
 
     return NO_SUBSCRIBER_WITH_ID;
 }
@@ -597,11 +643,17 @@ ev_status unsubscribe_event(bus* b) {
     mutex_scope(b->mu);
 
     auto it = b->subs.find(typeid(EventT));
-    if (it == b->subs.end()) { return EVENT_TYPE_NOT_REGISTERED; }
+    if (it == b->subs.end()) {
+        ev_log(b, ERROR, "Event: {event} is not registered in the bus", typeid(EventT));
+
+        return EVENT_TYPE_NOT_REGISTERED;
+    }
 
     b->subs.erase(it);
 
     detail::gc(b);
+    ev_log(
+        b, INFO, "Successfully unsubscribed all subscribers from event: {event}", typeid(EventT));
 
     return OK;
 }
@@ -610,6 +662,7 @@ ev_status unsubscribe_event(bus* b) {
 inline ev_status unsubscribe_all(bus* b) {
     mutex_scope(b->mu);
     b->subs.clear();
+    ev_log(b, DEBUG, "Successfully cleared the bus");
     return OK;
 }
 
@@ -619,14 +672,24 @@ ev_status publish(bus* b, EventT data) {
     mutex_scope(b->mu);
 
     auto it = b->subs.find(typeid(EventT));
-    if (it == b->subs.end()) { return EVENT_TYPE_NOT_REGISTERED; }
+    if (it == b->subs.end()) {
+        ev_log(b, ERROR, "Event: {event} is not registered in the bus", typeid(EventT));
+
+        return EVENT_TYPE_NOT_REGISTERED;
+    }
 
     auto& vec = it->second;
-    if (vec.empty()) { return NO_SUBSCRIBERS_FOR_EVENT_TYPE; }
+    if (vec.empty()) {
+        ev_log(b, WARNING, "No subscribers registered to {event}", typeid(EventT));
+
+        return NO_SUBSCRIBERS_FOR_EVENT_TYPE;
+    }
 
     for (auto& sub : vec) {
         if (!sub.invoke(&data)) { break; }
     }
+
+    ev_log(b, INFO, "Succesfully published event: {event}", typeid(EventT));
 
     return OK;
 }
@@ -662,10 +725,18 @@ ev_status publish_async(bus* b, EventT data) {
     mutex_scope(b->mu);
 
     auto it = b->subs.find(typeid(EventT));
-    if (it == b->subs.end()) return EVENT_TYPE_NOT_REGISTERED;
+    if (it == b->subs.end()) {
+        ev_log(b, ERROR, "Event: {event} is not registered in the bus", typeid(EventT));
+
+        return EVENT_TYPE_NOT_REGISTERED;
+    }
 
     auto& vec = it->second;
-    if (vec.empty()) return NO_SUBSCRIBERS_FOR_EVENT_TYPE;
+    if (vec.empty()) {
+        ev_log(b, WARNING, "No subscribers registered to {event}", typeid(EventT));
+
+        return NO_SUBSCRIBERS_FOR_EVENT_TYPE;
+    }
 
     // TODO: see if we may want to copy subs here
     if (vec.size() == 1) {
@@ -677,6 +748,8 @@ ev_status publish_async(bus* b, EventT data) {
             // NOTE: 'break on false' logic is no longer possible here
         }
     }
+
+    ev_log(b, INFO, "Succesfully published event: {event}", typeid(EventT));
 
     return OK;
 }
