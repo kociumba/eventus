@@ -1,4 +1,4 @@
-// eventus.h - v0.0.4 - kociumba 2026
+// eventus.h - v0.1.0 - kociumba 2026
 //
 // INFO:
 //  To use eventus you don't need to define an implementation macro but there are configuration macros
@@ -8,6 +8,7 @@
 //      - #define EVENTUS_NO_BUS_GC       - disables gc of empty events and types in the bus
 //      - #define EVENTUS_NO_THREADING    - excludes threaded publish methods
 //      - #define EVENTUS_SHORT_NAMESPACE - shortens the eventus:: namespace to ev::
+//      - #define EVENTUS_DEBUG_LOG       - enables debug logging for the bus
 //
 // NOTE: when EVENTUS_NO_THREADING is not defined, EVENTUS_THREAD_SAFE is automatically defined due
 //  to requiering thread safety in the threading code
@@ -40,6 +41,9 @@
 #ifndef EVENTUS_H
 #define EVENTUS_H
 
+// testing
+#define EVENTUS_DEBUG_LOG
+
 // =-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
 // =-               I N C L U D E S               -=
 // =-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
@@ -58,6 +62,20 @@
 // =-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
 // =-   M A C R O   C H E C K S / D E F I N E S   -=
 // =-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
+
+#if defined(EVENTUS_DEBUG_LOG)
+#include <iostream>
+#include <string>
+#include <string_view>
+#define ev_log(log_func, data) log_func(data)
+
+#ifdef __GNUC__
+#include <cxxabi.h>
+#endif
+
+#else
+#define ev_log(log_func, data)
+#endif
 
 #define eventus_function std::move_only_function
 #if !defined(__cpp_lib_move_only_function)
@@ -119,7 +137,7 @@ namespace eventus {
 // =-          S U B S C I B E R   A P I          -=
 // =-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
 
-enum e_status {
+enum ev_status {
     OK,
     EVENT_TYPE_NOT_REGISTERED,
     NO_SUBSCRIBERS_FOR_EVENT_TYPE,
@@ -127,7 +145,7 @@ enum e_status {
 };
 
 // use to get a string representation of an eventus state value
-inline const char* status_string(e_status s) {
+inline const char* status_string(ev_status s) {
     switch (s) {
         case OK:
             return "OK";
@@ -138,9 +156,43 @@ inline const char* status_string(e_status s) {
         case NO_SUBSCRIBER_WITH_ID:
             return "NO_SUBSCRIBER_WITH_ID";
         default:
-            return "invalid eventus::e_status value";
+            return "invalid eventus::ev_status value";
     }
 }
+
+#if defined(EVENTUS_DEBUG_LOG)
+enum ev_log_level {
+    DEBUG,
+    INFO,
+    WARNING,
+    ERROR,
+    FATAL,
+};
+
+struct ev_log_data {
+    ev_log_level level;
+    bool has_sub_id;
+    int64_t id;
+    std::string_view msg;
+    bool has_event_type_info;
+    std::type_index event_type;
+
+    std::string_view get_event_type_name() const {
+        if (!has_event_type_info) { return "N/A"; }
+
+        const char* mangled_name = event_type.name();
+
+#ifdef __GNUC__
+        int status = 0;
+        std::unique_ptr<char, void (*)(void*)> res{
+            abi::__cxa_demangle(mangled_name, nullptr, nullptr, &status), std::free};
+        return (status == 0) ? res.get() : mangled_name;
+#else
+        return mangled_name;
+#endif
+    }
+};
+#endif
 
 using invoke_fn = bool (*)(void* callback, void* event);
 
@@ -234,33 +286,80 @@ template <typename... EventTs, typename F>
 std::vector<int64_t> subscribe_multi(bus* b, F&& func, int32_t priority = 0);
 
 template <typename EventT>
-e_status unsubscribe(bus* b, int64_t id);
+ev_status unsubscribe(bus* b, int64_t id);
 
-inline e_status unsubscribe(bus* b, int64_t id);
-
-template <typename EventT>
-e_status unsubscribe_event(bus* b);
-
-inline e_status unsubscribe_all(bus* b);
+inline ev_status unsubscribe(bus* b, int64_t id);
 
 template <typename EventT>
-e_status publish(bus* b, EventT data);
+ev_status unsubscribe_event(bus* b);
+
+inline ev_status unsubscribe_all(bus* b);
+
+template <typename EventT>
+ev_status publish(bus* b, EventT data);
 
 template <typename... EventTs>
-e_status publish_multi(bus* b, EventTs... data);
+ev_status publish_multi(bus* b, EventTs... data);
 
 #if defined(EVENTUS_HAS_JTHREAD)
 template <typename EventT>
-e_status publish_threaded(bus* b, EventT data);
+ev_status publish_threaded(bus* b, EventT data);
 
 template <typename... EventTs>
-e_status publish_threaded_multi(bus* b, EventTs... data);
+ev_status publish_threaded_multi(bus* b, EventTs... data);
 
 template <typename EventT>
-e_status publish_async(bus* b, EventT data);
+ev_status publish_async(bus* b, EventT data);
 
 template <typename... EventT>
-e_status publish_async_multi(bus* b, EventT... data);
+ev_status publish_async_multi(bus* b, EventT... data);
+#endif
+
+#if defined(EVENTUS_DEBUG_LOG)
+using log_func = eventus_function<void(ev_log_data)>;
+
+inline void ev_default_log_func(ev_log_data data) {
+    std::string buf;
+    bool abort = false;
+    buf.reserve(128);
+
+    switch (data.level) {
+        case DEBUG:
+            buf += "[DEBU] : ";
+            break;
+        case INFO:
+            buf += "[INFO] : ";
+            break;
+        case WARNING:
+            buf += "[WARN] : ";
+            break;
+        case ERROR:
+            buf += "[ERRO] : ";
+            break;
+        case FATAL:
+            buf += "[FATA] : ";
+            abort = true;
+            break;
+    }
+
+    buf += data.msg;
+
+    if (data.has_event_type_info) {
+        buf += " for event: ";
+        buf += data.get_event_type_name();
+    }
+
+    if (data.has_sub_id) {
+        buf += " for subscriber: ";
+        buf += std::to_string(data.id);
+    }
+
+    std::cout << buf << std::endl;
+
+    if (abort) std::abort();
+}
+
+void set_logger(bus* b, log_func func = ev_default_log_func);
 #endif
 
 // =-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
@@ -328,6 +427,10 @@ struct bus {
     explicit bus(size_t threads) : pool(threads) {};
 #endif
 
+#if defined(EVENTUS_DEBUG_LOG)
+    log_func _log = ev_default_log_func;
+#endif
+
 #if defined(EVENTUS_BUS_METHODS)
     template <typename EventT, typename F>
         requires std::invocable<F, EventT*>
@@ -381,6 +484,12 @@ struct bus {
     template <typename... EventT>
     e_status publish_async_multi(bus* b, EventT... data) {
         return eventus::publish_async_multi(this, std::move(data)...);
+    }
+#endif
+
+#if defined(EVENTUS_DEBUG_LOG)
+    void set_logger(log_func func = ev_default_log_func) {
+        eventus::set_logger(this, std::move(func));
     }
 #endif
 #endif
@@ -439,7 +548,7 @@ std::vector<int64_t> subscribe_multi(bus* b, F&& func, int32_t priority) {
 
 // unsubscribes a subscriber using the provided id from the specified event
 template <typename EventT>
-e_status unsubscribe(bus* b, int64_t id) {
+ev_status unsubscribe(bus* b, int64_t id) {
     mutex_scope(b->mu);
 
     auto it = b->subs.find(typeid(EventT));
@@ -461,10 +570,10 @@ e_status unsubscribe(bus* b, int64_t id) {
 }
 
 // unsubscribes based only on an id, not to be used in performance critical applications
-inline e_status unsubscribe(bus* b, int64_t id) {
+inline ev_status unsubscribe(bus* b, int64_t id) {
     mutex_scope(b->mu);
 
-    for (auto it = b->subs.begin(); it != b->subs.end(); ++it) {  // Increment here
+    for (auto it = b->subs.begin(); it != b->subs.end(); ++it) {
         auto& vec = it->second;
 
         auto new_end = std::remove_if(
@@ -484,7 +593,7 @@ inline e_status unsubscribe(bus* b, int64_t id) {
 
 // unsubscribes all subscribers from the specified event
 template <typename EventT>
-e_status unsubscribe_event(bus* b) {
+ev_status unsubscribe_event(bus* b) {
     mutex_scope(b->mu);
 
     auto it = b->subs.find(typeid(EventT));
@@ -498,7 +607,7 @@ e_status unsubscribe_event(bus* b) {
 }
 
 // clears the whole bus unsubscribing all subscribers
-inline e_status unsubscribe_all(bus* b) {
+inline ev_status unsubscribe_all(bus* b) {
     mutex_scope(b->mu);
     b->subs.clear();
     return OK;
@@ -506,7 +615,7 @@ inline e_status unsubscribe_all(bus* b) {
 
 // publishes an event of type EventT, executing subscribers on the current thread
 template <typename EventT>
-e_status publish(bus* b, EventT data) {
+ev_status publish(bus* b, EventT data) {
     mutex_scope(b->mu);
 
     auto it = b->subs.find(typeid(EventT));
@@ -524,8 +633,8 @@ e_status publish(bus* b, EventT data) {
 
 // publishes an events of types EventT..., executing subscribers on the current thread
 template <typename... EventTs>
-e_status publish_multi(bus* b, EventTs... data) {
-    e_status last_status = OK;
+ev_status publish_multi(bus* b, EventTs... data) {
+    ev_status last_status = OK;
     ((last_status = publish(b, data)), ...);
     return last_status;
 }
@@ -533,14 +642,14 @@ e_status publish_multi(bus* b, EventTs... data) {
 #if defined(EVENTUS_HAS_JTHREAD)
 // publishes an event of type EventT, executing subscribers on a remote thread
 template <typename EventT>
-e_status publish_threaded(bus* b, EventT data) {
+ev_status publish_threaded(bus* b, EventT data) {
     b->pool.enqueue([b, data = std::move(data)]() mutable { publish(b, std::move(data)); });
     return OK;
 }
 
 // publishes events of types EventT..., executing subscribers on a remote thread
 template <typename... EventTs>
-e_status publish_threaded_multi(bus* b, EventTs... data) {
+ev_status publish_threaded_multi(bus* b, EventTs... data) {
     (publish_threaded(b, std::move(data)), ...);
     return OK;
 }
@@ -549,7 +658,7 @@ e_status publish_threaded_multi(bus* b, EventTs... data) {
 // this disregards subscriber priority and loses benefits the less work subscribers do,
 // this also does not stop event propagation on subscriber error
 template <typename EventT>
-e_status publish_async(bus* b, EventT data) {
+ev_status publish_async(bus* b, EventT data) {
     mutex_scope(b->mu);
 
     auto it = b->subs.find(typeid(EventT));
@@ -576,12 +685,20 @@ e_status publish_async(bus* b, EventT data) {
 // this disregards subscriber priority and loses benefits the less work subscribers do,
 // this also does not stop event propagation on subscriber error
 template <typename... EventT>
-e_status publish_async_multi(bus* b, EventT... data) {
+ev_status publish_async_multi(bus* b, EventT... data) {
     (publish_async(b, std::move(data)), ...);
     return OK;
 }
 
 #endif
+
+#if defined(EVENTUS_DEBUG_LOG)
+void set_logger(bus* b, log_func func) {
+    mutex_scope(b->mu);
+    b->_log = std::move(func);
+}
+#endif
+
 }  // namespace eventus
 
 #endif /* EVENTUS_H */

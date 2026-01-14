@@ -7,7 +7,6 @@ target("eventus")
     add_headerfiles("eventus.h", "eventus/eventus", {public = true})
     add_includedirs("eventus", "/", {public = true})
 
-
 for _, file in ipairs(os.files("examples/*.cpp")) do
     local name = path.basename(file)
 
@@ -16,6 +15,7 @@ for _, file in ipairs(os.files("examples/*.cpp")) do
         set_group("examples")
         set_default(false)
         add_files(file)
+        add_headerfiles("examples/**.h")
         add_deps("eventus")
-        add_cxxflags("-Wall")
+        set_warnings("all", "extra")
 end
