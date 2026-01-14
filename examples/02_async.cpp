@@ -7,7 +7,7 @@ struct message {
     int id;
 };
 
-int main(int argc, char** argv) {
+int main() {
     std::println("=== {} ===\n", __FILE__);
 
     // Custom thread pool size: bus(thread_pool_size)

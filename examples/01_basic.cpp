@@ -6,7 +6,7 @@ bool sub_func(const char** data) {
     return true;
 }
 
-int main(int argc, char** argv) {
+int main() {
     std::println("=== {} ===\n", __FILE__);
 
     auto b = eventus::bus();
