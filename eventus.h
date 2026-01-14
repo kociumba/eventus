@@ -181,7 +181,7 @@ struct ev_log_data {
                 std::string msg,
                 std::type_index event_t = typeid(void),
                 int64_t id = -1)
-        : level(l), msg(msg), event_type(event_t), id(id) {
+        : level(l), msg(std::move(msg)), event_type(event_t), id(id) {
         has_event_type_info = event_type != typeid(void);
         has_sub_id = id != -1;
     }
@@ -206,10 +206,11 @@ struct ev_log_data {
         std::string result = msg;
 
         if (has_event_type_info) {
+            std::string event_t_name = get_event_type_name();
             size_t pos = 0;
             while ((pos = result.find("{event}", pos)) != std::string::npos) {
-                result.replace(pos, 7, get_event_type_name());
-                pos += get_event_type_name().length();
+                result.replace(pos, 7, event_t_name);
+                pos += event_t_name.length();
             }
         }
 
@@ -609,7 +610,7 @@ ev_status unsubscribe(bus* b, int64_t id) {
 
     ev_log(b, WARNING, "No subscriber with id: {id} registered to {event}", typeid(EventT), id);
 
-    return NO_SUBSCRIBERS_FOR_EVENT_TYPE;
+    return NO_SUBSCRIBER_WITH_ID;
 }
 
 // unsubscribes based only on an id, not to be used in performance critical applications
@@ -689,7 +690,7 @@ ev_status publish(bus* b, EventT data) {
         if (!sub.invoke(&data)) { break; }
     }
 
-    ev_log(b, INFO, "Succesfully published event: {event}", typeid(EventT));
+    ev_log(b, INFO, "Successfully published event: {event}", typeid(EventT));
 
     return OK;
 }
@@ -749,7 +750,7 @@ ev_status publish_async(bus* b, EventT data) {
         }
     }
 
-    ev_log(b, INFO, "Succesfully published event: {event}", typeid(EventT));
+    ev_log(b, INFO, "Successfully published event: {event}", typeid(EventT));
 
     return OK;
 }
