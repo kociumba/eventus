@@ -1,4 +1,4 @@
-// eventus.h - v0.1.0 - kociumba 2026
+// eventus.h - v0.1.1 - kociumba 2026
 //
 // INFO:
 //  To use eventus you don't need to define an implementation macro but there are configuration macros
@@ -474,45 +474,45 @@ struct bus {
     }
 
     template <typename EventT>
-    e_status unsubscribe(int64_t id) {
+    ev_status unsubscribe(int64_t id) {
         return eventus::unsubscribe<EventT>(this, id);
     }
 
     template <typename EventT>
-    e_status unsubscribe_event() {
+    ev_status unsubscribe_event() {
         return eventus::unsubscribe_event<EventT>(this);
     }
 
-    e_status unsubscribe_all() { return eventus::unsubscribe_all(this); }
+    ev_status unsubscribe_all() { return eventus::unsubscribe_all(this); }
 
     template <typename EventT>
-    e_status publish(EventT data) {
+    ev_status publish(EventT data) {
         return eventus::publish<EventT>(this, std::move(data));
     }
 
     template <typename... EventTs>
-    e_status publish_multi(EventTs... data) {
+    ev_status publish_multi(EventTs... data) {
         return eventus::publish_multi(this, std::move(data)...);
     }
 
 #if defined(EVENTUS_HAS_JTHREAD)
     template <typename EventT>
-    e_status publish_threaded(EventT data) {
+    ev_status publish_threaded(EventT data) {
         return eventus::publish_threaded<EventT>(this, std::move(data));
     }
 
     template <typename... EventTs>
-    e_status publish_threaded_multi(EventTs... data) {
+    ev_status publish_threaded_multi(EventTs... data) {
         return eventus::publish_threaded_multi(this, std::move(data)...);
     }
 
     template <typename EventT>
-    e_status publish_async(EventT data) {
+    ev_status publish_async(EventT data) {
         return eventus::publish_async(this, std::move(data));
     }
 
     template <typename... EventT>
-    e_status publish_async_multi(bus* b, EventT... data) {
+    ev_status publish_async_multi(bus* b, EventT... data) {
         return eventus::publish_async_multi(this, std::move(data)...);
     }
 #endif
