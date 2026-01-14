@@ -201,7 +201,7 @@ struct ev_log_data {
 #endif
     }
 
-    // prforms {...} formatting on the log data, only supports specific named placeholders
+    // performs {...} formatting on the log data, only supports specific named placeholders
     std::string format() const {
         std::string result = msg;
 
