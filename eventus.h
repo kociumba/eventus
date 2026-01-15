@@ -1,14 +1,15 @@
-// eventus.h - v0.1.1 - kociumba 2026
+// eventus.h - v0.2.0 - kociumba 2026
 //
 // INFO:
 //  To use eventus you don't need to define an implementation macro but there are configuration macros
 //  which you can define before including eventus:
-//      - #define EVENTUS_THREAD_SAFE     - makes eventus thread safe(duh) but somewhat hinders performance
-//      - #define EVENTUS_BUS_METHODS     - includes methods on the main bus type, for oop like usage
-//      - #define EVENTUS_NO_BUS_GC       - disables gc of empty events and types in the bus
-//      - #define EVENTUS_NO_THREADING    - excludes threaded publish methods
-//      - #define EVENTUS_SHORT_NAMESPACE - shortens the eventus:: namespace to ev::
-//      - #define EVENTUS_DEBUG_LOG       - enables debug logging for the bus
+//      - #define EVENTUS_THREAD_SAFE      - makes eventus thread safe(duh) but somewhat hinders performance
+//      - #define EVENTUS_BUS_METHODS      - includes methods on the main bus type, for oop like usage
+//      - #define EVENTUS_NO_BUS_GC        - disables gc of empty events and types in the bus
+//      - #define EVENTUS_NO_THREADING     - excludes threaded publish methods
+//      - #define EVENTUS_SHORT_NAMESPACE  - shortens the eventus:: namespace to ev::, overriden by EVENTUS_NAMESPACE
+//      - #define EVENTUS_NAMESPACE <name> - if defined eventus will use the provided name as its main namespace
+//      - #define EVENTUS_DEBUG_LOG        - enables debug logging for the bus
 //
 // NOTE: when EVENTUS_NO_THREADING is not defined, EVENTUS_THREAD_SAFE is automatically defined due
 //  to requiering thread safety in the threading code
@@ -34,7 +35,7 @@
 //
 //      eventus::publish(&b, my_event{42});
 //
-// LICENSE
+// LICENSE:
 //
 //   See end of file for license information.
 
@@ -127,14 +128,18 @@
 #define mutex_scope(mutex) std::lock_guard lock##__LINE__(mutex)
 #endif
 
-#if defined(EVENTUS_SHORT_NAMESPACE)
-namespace ev {
+#if defined(EVENTUS_NAMESPACE)
+#define eventus_ns EVENTUS_NAMESPACE
+#elif defined(EVENTUS_SHORT_NAMESPACE)
+#define eventus_ns ev
 #else
-namespace eventus {
+#define eventus_ns eventus
 #endif
 
+namespace eventus_ns {
+
 // =-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
-// =-          S U B S C I B E R   A P I          -=
+// =-             D A T A   T Y P E S             -=
 // =-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
 
 enum ev_status {
@@ -142,6 +147,7 @@ enum ev_status {
     EVENT_TYPE_NOT_REGISTERED,
     NO_SUBSCRIBERS_FOR_EVENT_TYPE,
     NO_SUBSCRIBER_WITH_ID,
+    INVALID_SUBSCRIBER_ID,
 };
 
 // use to get a string representation of an eventus state value
@@ -155,6 +161,8 @@ inline const char* status_string(ev_status s) {
             return "NO_SUBSCRIBERS_FOR_EVENT_TYPE";
         case NO_SUBSCRIBER_WITH_ID:
             return "NO_SUBSCRIBER_WITH_ID";
+        case INVALID_SUBSCRIBER_ID:
+            return "INVALID_SUBSCRIBER_ID";
         default:
             return "invalid eventus::ev_status value";
     }
@@ -169,6 +177,7 @@ enum ev_log_level {
     FATAL,
 };
 
+// holds data for logging purposes, it contains some helper methods to simplify writing custom loggers
 struct ev_log_data {
     ev_log_level level;
     std::string msg;
@@ -186,6 +195,7 @@ struct ev_log_data {
         has_sub_id = id != -1;
     }
 
+    // returns the demangled name of the event type if the log contains any event type info
     std::string get_event_type_name() const {
         if (!has_event_type_info) { return "N/A"; }
 
@@ -228,6 +238,12 @@ struct ev_log_data {
 };
 #endif
 
+// =-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
+// =-          S U B S C I B E R   A P I          -=
+// =-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
+
+namespace detail {
+
 using invoke_fn = bool (*)(void* callback, void* event);
 
 template <typename EventT>
@@ -236,9 +252,11 @@ bool invoke_typed(void* callback, void* event) {
     return (*cb)(static_cast<EventT*>(event));
 }
 
+}  // namespace detail
+
 struct subscriber {
     void* callback_storage;
-    invoke_fn invoker;
+    detail::invoke_fn invoker;
     void (*deleter)(void*);
     int64_t id;
     int32_t priority = 0;
@@ -253,7 +271,7 @@ struct subscriber {
         using CallbackType = eventus_function<bool(EventT*)>;
         callback_storage = new CallbackType(std::forward<F>(f));
 
-        invoker = &invoke_typed<EventT>;
+        invoker = &detail::invoke_typed<EventT>;
         deleter = [](void* ptr) { delete static_cast<CallbackType*>(ptr); };
     }
 
@@ -266,7 +284,7 @@ struct subscriber {
 
         using CallbackType = eventus_function<bool(EventT*)>;
         s.callback_storage = new CallbackType(std::forward<F>(f));
-        s.invoker = &invoke_typed<EventT>;
+        s.invoker = &detail::invoke_typed<EventT>;
         s.deleter = [](void* ptr) { delete static_cast<CallbackType*>(ptr); };
 
         return s;
@@ -311,6 +329,7 @@ struct subscriber {
 // =-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
 
 struct bus;
+struct ev_id;
 
 template <typename EventT, typename F>
     requires std::invocable<F, EventT*>
@@ -318,6 +337,8 @@ int64_t subscribe(bus* b, F&& func, int32_t priority = 0);
 
 template <typename... EventTs, typename F>
 std::vector<int64_t> subscribe_multi(bus* b, F&& func, int32_t priority = 0);
+
+ev_status unsubscribe(bus* b, int64_t id, std::type_index t);
 
 template <typename EventT>
 ev_status unsubscribe(bus* b, int64_t id);
@@ -392,6 +413,80 @@ inline void ev_default_log_func(ev_log_data data) {
 void set_logger(bus* b, log_func func = ev_default_log_func);
 #endif
 
+struct owned_id;
+
+// ev_id represents a subscription handle
+struct ev_id {
+    bus* _bus_ref = nullptr;
+    int64_t id = -1;
+    std::type_index event_t = typeid(void);
+
+    ev_id() = default;
+    ev_id(bus* b, int64_t i, std::type_index t) : _bus_ref(b), id(i), event_t(t) {}
+
+    operator int64_t() const { return id; }
+
+    bool valid() const noexcept { return _bus_ref != nullptr && id != -1; }
+
+    operator bool() const { return valid(); }
+
+    ev_status unsubscribe() {
+        if (!valid()) return INVALID_SUBSCRIBER_ID;
+        auto status = eventus_ns::unsubscribe(_bus_ref, id, event_t);
+        _bus_ref = nullptr;
+        return status;
+    }
+
+    owned_id scoped() &&;
+    owned_id scoped() & = delete;
+
+    ev_id(ev_id&& other) noexcept : _bus_ref(other._bus_ref), id(other.id) {
+        other._bus_ref = nullptr;
+        other.id = -1;
+    }
+
+    ev_id& operator=(ev_id&& other) noexcept {
+        if (this != &other) {
+            if (valid()) unsubscribe();
+            _bus_ref = other._bus_ref;
+            id = other.id;
+            other._bus_ref = nullptr;
+            other.id = -1;
+        }
+        return *this;
+    }
+
+    ev_id(const ev_id&) = delete;
+    ev_id& operator=(const ev_id&) = delete;
+};
+
+// owned_id allows for subscriber management as a lifetime, when owned_is is destroyed the handler is unsubscribed
+struct owned_id {
+    ev_id handle;
+
+    owned_id(ev_id&& h) : handle(std::move(h)) {}
+
+    ~owned_id() { handle.unsubscribe(); }
+    ev_status unsubscribe() { return handle.unsubscribe(); }
+    bool valid() const noexcept { return handle.valid(); }
+
+    operator int64_t() const { return handle.id; }
+    operator bool() const { return handle.valid(); }
+
+    owned_id(const owned_id&) = delete;
+    owned_id& operator=(const owned_id&) = delete;
+};
+
+// tranforms ev_id into an owned_id, allowing for defer like unsubscription
+inline owned_id ev_id::scoped() && { return {std::move(*this)}; }
+
+namespace detail {
+struct _scoped_t {};
+}  // namespace detail
+inline constexpr detail::_scoped_t scoped;
+
+inline auto operator|(ev_id&& id, detail::_scoped_t) { return std::move(id).scoped(); }
+
 // =-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
 // =-              A P I   I M P L S              -=
 // =-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
@@ -465,61 +560,65 @@ struct bus {
     template <typename EventT, typename F>
         requires std::invocable<F, EventT*>
     int64_t subscribe(F&& func, int32_t priority = 0) {
-        return eventus::subscribe<EventT, F>(this, std::forward<F>(func), priority);
+        return eventus_ns::subscribe<EventT, F>(this, std::forward<F>(func), priority);
     }
 
     template <typename... EventTs, typename F>
     std::vector<int64_t> subscribe_multi(F&& func, int32_t priority = 0) {
-        return eventus::subscribe_multi<EventTs...>(this, std::forward<F>(func), priority);
+        return eventus_ns::subscribe_multi<EventTs...>(this, std::forward<F>(func), priority);
+    }
+
+    ev_status unsubscribe(bus* b, int64_t id, std::type_index t) {
+        return eventus_ns::unsubscribe(this, id, t);
     }
 
     template <typename EventT>
     ev_status unsubscribe(int64_t id) {
-        return eventus::unsubscribe<EventT>(this, id);
+        return eventus_ns::unsubscribe<EventT>(this, id);
     }
 
     template <typename EventT>
     ev_status unsubscribe_event() {
-        return eventus::unsubscribe_event<EventT>(this);
+        return eventus_ns::unsubscribe_event<EventT>(this);
     }
 
-    ev_status unsubscribe_all() { return eventus::unsubscribe_all(this); }
+    ev_status unsubscribe_all() { return eventus_ns::unsubscribe_all(this); }
 
     template <typename EventT>
     ev_status publish(EventT data) {
-        return eventus::publish<EventT>(this, std::move(data));
+        return eventus_ns::publish<EventT>(this, std::move(data));
     }
 
     template <typename... EventTs>
     ev_status publish_multi(EventTs... data) {
-        return eventus::publish_multi(this, std::move(data)...);
+        return eventus_ns::publish_multi(this, std::move(data)...);
     }
 
 #if defined(EVENTUS_HAS_JTHREAD)
     template <typename EventT>
     ev_status publish_threaded(EventT data) {
-        return eventus::publish_threaded<EventT>(this, std::move(data));
+        return eventus_ns::publish_threaded<EventT>(this, std::move(data));
     }
 
     template <typename... EventTs>
     ev_status publish_threaded_multi(EventTs... data) {
-        return eventus::publish_threaded_multi(this, std::move(data)...);
+        return eventus_ns::publish_threaded_multi(this, std::move(data)...);
     }
 
     template <typename EventT>
     ev_status publish_async(EventT data) {
-        return eventus::publish_async(this, std::move(data));
+        return eventus_ns::publish_async(this, std::move(data));
     }
 
     template <typename... EventT>
     ev_status publish_async_multi(bus* b, EventT... data) {
-        return eventus::publish_async_multi(this, std::move(data)...);
+        return eventus_ns::publish_async_multi(this, std::move(data)...);
     }
 #endif
 
 #if defined(EVENTUS_DEBUG_LOG)
     void set_logger(log_func func = ev_default_log_func) {
-        eventus::set_logger(this, std::move(func));
+        eventus_ns::set_logger(this, std::move(func));
     }
 #endif
 #endif
@@ -578,18 +677,17 @@ std::vector<int64_t> subscribe_multi(bus* b, F&& func, int32_t priority) {
     return ids;
 }
 
-// unsubscribes a subscriber using the provided id from the specified event
-template <typename EventT>
-ev_status unsubscribe(bus* b, int64_t id) {
+// unsubscribes a subscriber using the provided id from the specified event, without template specialization
+inline ev_status unsubscribe(bus* b, int64_t id, std::type_index t) {
     mutex_scope(b->mu);
 
-    auto it = b->subs.find(typeid(EventT));
+    auto it = b->subs.find(t);
     if (it == b->subs.end()) {
         ev_log(b,
                ERROR,
                "Event: {event} is not registered in the bus, can not unsubscribe id: {id} from "
                "nonexistant event",
-               typeid(EventT),
+               t,
                id);
 
         return EVENT_TYPE_NOT_REGISTERED;
@@ -603,14 +701,20 @@ ev_status unsubscribe(bus* b, int64_t id) {
         vec.erase(sub_it);
 
         detail::gc(b);
-        ev_log(b, INFO, "Successfully unsubscribed from {event} with id: {id}", typeid(EventT), id);
+        ev_log(b, INFO, "Successfully unsubscribed from {event} with id: {id}", t, id);
 
         return OK;
     }
 
-    ev_log(b, WARNING, "No subscriber with id: {id} registered to {event}", typeid(EventT), id);
+    ev_log(b, WARNING, "No subscriber with id: {id} registered to {event}", t, id);
 
     return NO_SUBSCRIBER_WITH_ID;
+}
+
+// unsubscribes a subscriber using the provided id from the specified event
+template <typename EventT>
+ev_status unsubscribe(bus* b, int64_t id) {
+    return unsubscribe(b, id, typeid(EventT));
 }
 
 // unsubscribes based only on an id, not to be used in performance critical applications
@@ -773,7 +877,7 @@ void set_logger(bus* b, log_func func) {
 }
 #endif
 
-}  // namespace eventus
+}  // namespace eventus_ns
 
 #endif /* EVENTUS_H */
 
