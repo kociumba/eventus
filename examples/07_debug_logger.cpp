@@ -66,8 +66,9 @@ int main() {
     std::println("\n=== Scenario 3: Debugging Unregistered Events ===");
 
     // Attempting to publish an event that has no subscribers.
-    // The logger will report the unregisted event.
+    // The logger will report the unregistered event.
     eventus::publish(&b, unregistered_event{42});
+    id2.unsubscribe();
 
     std::println("\n=== Summary ===");
     std::println(
@@ -75,7 +76,7 @@ int main() {
         "to be present");
     std::println("ev_log_data: Contains level, captured data and the log message");
     std::println(
-        "set_logger: Allows providing your own logger, for custom logging, or logger sytem "
+        "set_logger: Allows providing your own logger, for custom logging, or logger system "
         "integration");
     std::println("ev_log_data.format(): formats log messages with the captured data for display\n");
 

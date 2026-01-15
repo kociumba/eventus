@@ -52,7 +52,7 @@ int main() {
     std::println("Status: {}\n", eventus::status_string(status));
     eventus::publish(&b, CleanupEvent{69});
 
-    // Unsubscribe another by ID
+    // Unsubscribe another by ID using ev_id member function
     std::println("\n=== Unsubscribe Subscriber 1 using id (ID: {}) ===", subs[id1].id);
     status = subs[id1].unsubscribe();
     std::println("Status: {}\n", eventus::status_string(status));

@@ -57,6 +57,10 @@
 #include <unordered_map>
 #include <vector>
 
+#ifdef __GNUC__
+#include <cxxabi.h>
+#endif
+
 // =-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
 // =-   M A C R O   C H E C K S / D E F I N E S   -=
 // =-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
@@ -69,11 +73,6 @@
 #include <string_view>
 #define ev_log(bus_ptr, ...) \
     if ((bus_ptr)->_log) { (bus_ptr)->_log(ev_log_data(__VA_ARGS__)); }
-
-#ifdef __GNUC__
-#include <cxxabi.h>
-#endif
-
 #else
 #define ev_log(log_func, ...)
 #endif
@@ -360,7 +359,7 @@ ev_status unsubscribe(bus* b, ev_id&& id);
 ev_status unsubscribe(bus* b, ev_id& id);
 
 template <typename EventT>
-[[deprecated]] ev_status unsubscribe(bus* b, ev_id id);
+[[deprecated]] ev_status unsubscribe(bus* b, ev_id&& id);
 
 template <typename EventT>
 ev_status unsubscribe_event(bus* b);
@@ -498,7 +497,16 @@ struct owned_id {
 
     owned_id(const owned_id&) = delete;
     owned_id& operator=(const owned_id&) = delete;
-};  // namespace eventus_ns
+
+    owned_id(owned_id&& other) noexcept : handle(std::move(other.handle)) {}
+    owned_id& operator=(owned_id&& other) noexcept {
+        if (this != &other) {
+            handle.unsubscribe();
+            handle = std::move(other.handle);
+        }
+        return *this;
+    }
+};
 
 // tranforms ev_id into an owned_id, allowing for defer like unsubscription
 inline owned_id ev_id::scoped() && { return {std::move(*this)}; }
@@ -590,13 +598,12 @@ struct bus {
         return eventus_ns::subscribe_multi<EventTs...>(this, std::forward<F>(func), priority);
     }
 
-    ev_status unsubscribe(int64_t id, std::type_index t) {
-        return eventus_ns::unsubscribe(this, id, t);
-    }
+    ev_status unsubscribe(ev_id&& id) { return eventus_ns::unsubscribe(this, std::move(id)); }
+    ev_status unsubscribe(ev_id& id) { return eventus_ns::unsubscribe(this, std::move(id)); }
 
     template <typename EventT>
-    ev_status unsubscribe(int64_t id) {
-        return eventus_ns::unsubscribe<EventT>(this, id);
+    [[deprecated]] ev_status unsubscribe(ev_id&& id) {
+        return eventus_ns::unsubscribe<EventT>(this, std::move(id));
     }
 
     template <typename EventT>
@@ -745,9 +752,9 @@ inline ev_status unsubscribe(bus* b, ev_id& id) {
 
 // unsubscribes a subscriber using the provided id from the specified event
 template <typename EventT>
-ev_status unsubscribe(bus* b, ev_id id) {
+ev_status unsubscribe(bus* b, ev_id&& id) {
     if (id.event_t != typeid(EventT)) return MISMATCHED_EVENT_TYPES;
-    return unsubscribe(b, id);
+    return unsubscribe(b, std::move(id));
 }
 
 // unsubscribes all subscribers from the specified event
