@@ -333,10 +333,10 @@ struct ev_id;
 
 template <typename EventT, typename F>
     requires std::invocable<F, EventT*>
-int64_t subscribe(bus* b, F&& func, int32_t priority = 0);
+ev_id subscribe(bus* b, F&& func, int32_t priority = 0);
 
 template <typename... EventTs, typename F>
-std::vector<int64_t> subscribe_multi(bus* b, F&& func, int32_t priority = 0);
+std::vector<ev_id> subscribe_multi(bus* b, F&& func, int32_t priority = 0);
 
 ev_status unsubscribe(bus* b, int64_t id, std::type_index t);
 
@@ -440,9 +440,10 @@ struct ev_id {
     owned_id scoped() &&;
     owned_id scoped() & = delete;
 
-    ev_id(ev_id&& other) noexcept : _bus_ref(other._bus_ref), id(other.id) {
+    ev_id(ev_id&& other) noexcept : _bus_ref(other._bus_ref), id(other.id), event_t(other.event_t) {
         other._bus_ref = nullptr;
         other.id = -1;
+        other.event_t = typeid(void);
     }
 
     ev_id& operator=(ev_id&& other) noexcept {
@@ -450,8 +451,10 @@ struct ev_id {
             if (valid()) unsubscribe();
             _bus_ref = other._bus_ref;
             id = other.id;
+            event_t = other.event_t;
             other._bus_ref = nullptr;
             other.id = -1;
+            other.event_t = typeid(void);
         }
         return *this;
     }
@@ -559,16 +562,16 @@ struct bus {
 #if defined(EVENTUS_BUS_METHODS)
     template <typename EventT, typename F>
         requires std::invocable<F, EventT*>
-    int64_t subscribe(F&& func, int32_t priority = 0) {
+    ev_id subscribe(F&& func, int32_t priority = 0) {
         return eventus_ns::subscribe<EventT, F>(this, std::forward<F>(func), priority);
     }
 
     template <typename... EventTs, typename F>
-    std::vector<int64_t> subscribe_multi(F&& func, int32_t priority = 0) {
+    std::vector<ev_id> subscribe_multi(F&& func, int32_t priority = 0) {
         return eventus_ns::subscribe_multi<EventTs...>(this, std::forward<F>(func), priority);
     }
 
-    ev_status unsubscribe(bus* b, int64_t id, std::type_index t) {
+    ev_status unsubscribe(int64_t id, std::type_index t) {
         return eventus_ns::unsubscribe(this, id, t);
     }
 
@@ -611,7 +614,7 @@ struct bus {
     }
 
     template <typename... EventT>
-    ev_status publish_async_multi(bus* b, EventT... data) {
+    ev_status publish_async_multi(EventT... data) {
         return eventus_ns::publish_async_multi(this, std::move(data)...);
     }
 #endif
@@ -648,7 +651,7 @@ inline void gc(bus* b) {
 // subscribe to an event EventT, priority determines subscriber execution order on publish
 template <typename EventT, typename F>
     requires std::invocable<F, EventT*>
-int64_t subscribe(bus* b, F&& func, int32_t priority) {
+ev_id subscribe(bus* b, F&& func, int32_t priority) {
     mutex_scope(b->mu);
 
     int64_t id = b->id_counter.fetch_add(1);
@@ -663,13 +666,13 @@ int64_t subscribe(bus* b, F&& func, int32_t priority) {
     detail::gc(b);
     ev_log(b, INFO, "Successfully subscribed to {event} with id: {id}", typeid(EventT), id);
 
-    return id;
+    return {b, id, typeid(EventT)};
 }
 
 // subscribe to an event EventT..., priority determines subscriber execution order on publish
 template <typename... EventTs, typename F>
-std::vector<int64_t> subscribe_multi(bus* b, F&& func, int32_t priority) {
-    std::vector<int64_t> ids;
+std::vector<ev_id> subscribe_multi(bus* b, F&& func, int32_t priority) {
+    std::vector<ev_id> ids;
     ids.reserve(sizeof...(EventTs));
 
     (ids.push_back(subscribe<EventTs>(b, func, priority)), ...);
