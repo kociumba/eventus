@@ -65,6 +65,7 @@ int main() {
 
     // Demonstrate unsubscribing from multi-subscriber
     std::println("\n=== Unsubscribe multi-handler from EventA only ===");
+    std::println("event for ids[0] is: {}", eventus::detail::get_demangled_type(ids[0].event_t));
     eventus::unsubscribe(&b, ids[0]);
 
     std::println("\nPublishing EventA (multi-handler removed, specific handler remains):");

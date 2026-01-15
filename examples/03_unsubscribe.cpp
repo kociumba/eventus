@@ -52,9 +52,9 @@ int main() {
     std::println("Status: {}\n", eventus::status_string(status));
     eventus::publish(&b, CleanupEvent{69});
 
-    // Unsubscribe another by ID without event type
-    std::println("\n=== Unsubscribe Subscriber 1 (ID: {}) ===", subs[id1].id);
-    status = eventus::unsubscribe(&b, subs[id1]);
+    // Unsubscribe another by ID
+    std::println("\n=== Unsubscribe Subscriber 1 using id (ID: {}) ===", subs[id1].id);
+    status = subs[id1].unsubscribe();
     std::println("Status: {}\n", eventus::status_string(status));
     eventus::publish(&b, CleanupEvent{2137});
 
@@ -71,7 +71,7 @@ int main() {
     eventus::publish(&b, AnotherEvent{"Still working"});
 
     std::println("\n=== Summary ===");
-    std::println("unsubscribe<T>: Removes specific subscriber by ID");
+    std::println("unsubscribe: Removes specific subscriber by ID");
     std::println("unsubscribe_event<T>: Removes all subscribers for event type");
     std::println("Other event types remain unaffected");
     std::println("unsubscribe_all: clears all subscribers and events in the bus\n\n");

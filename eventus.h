@@ -129,7 +129,7 @@
 #endif
 
 #define check_bus(bus_ptr, id) \
-    if (bus_ptr != id._bus_ref) return MISMATCHED_BUSES
+    if (bus_ptr == nullptr || bus_ptr != id._bus_ref) return MISMATCHED_BUSES
 
 #if defined(EVENTUS_NAMESPACE)
 #define eventus_ns EVENTUS_NAMESPACE
@@ -155,7 +155,7 @@ enum ev_status {
     MISMATCHED_EVENT_TYPES,
 };
 
-// use to get a string representation of an eventus state value
+// use to get a string representation of an eventus status value
 inline const char* status_string(ev_status s) {
     switch (s) {
         case OK:
@@ -177,6 +177,24 @@ inline const char* status_string(ev_status s) {
     }
 }
 
+namespace detail {
+
+// use to get a demangled name from std::type_index
+inline std::string get_demangled_type(std::type_index t) {
+    const char* mangled_name = t.name();
+
+#ifdef __GNUC__
+    int status = 0;
+    std::unique_ptr<char, void (*)(void*)> res{
+        abi::__cxa_demangle(mangled_name, nullptr, nullptr, &status), std::free};
+    return (status == 0) ? std::string(res.get()) : std::string(mangled_name);
+#else
+    return std::string(mangled_name);
+#endif
+}
+
+}  // namespace detail
+
 #if defined(EVENTUS_DEBUG_LOG)
 enum ev_log_level {
     DEBUG,
@@ -196,9 +214,9 @@ struct ev_log_data {
     int64_t id = -1;
 
     ev_log_data(ev_log_level l,
-                std::string msg,
-                std::type_index event_t = typeid(void),
-                int64_t id = -1)
+        std::string msg,
+        std::type_index event_t = typeid(void),
+        int64_t id = -1)
         : level(l), msg(std::move(msg)), event_type(event_t), id(id) {
         has_event_type_info = event_type != typeid(void);
         has_sub_id = id != -1;
@@ -208,16 +226,7 @@ struct ev_log_data {
     std::string get_event_type_name() const {
         if (!has_event_type_info) { return "N/A"; }
 
-        const char* mangled_name = event_type.name();
-
-#ifdef __GNUC__
-        int status = 0;
-        std::unique_ptr<char, void (*)(void*)> res{
-            abi::__cxa_demangle(mangled_name, nullptr, nullptr, &status), std::free};
-        return (status == 0) ? std::string(res.get()) : std::string(mangled_name);
-#else
-        return std::string(mangled_name);
-#endif
+        return detail::get_demangled_type(event_type);
     }
 
     // performs {...} formatting on the log data, only supports specific named placeholders
@@ -225,7 +234,7 @@ struct ev_log_data {
         std::string result = msg;
 
         if (has_event_type_info) {
-            std::string event_t_name = get_event_type_name();
+            std::string event_t_name = "'" + get_event_type_name() + "'";
             size_t pos = 0;
             while ((pos = result.find("{event}", pos)) != std::string::npos) {
                 result.replace(pos, 7, event_t_name);
@@ -351,7 +360,7 @@ ev_status unsubscribe(bus* b, ev_id&& id);
 ev_status unsubscribe(bus* b, ev_id& id);
 
 template <typename EventT>
-ev_status unsubscribe(bus* b, ev_id id);
+[[deprecated]] ev_status unsubscribe(bus* b, ev_id id);
 
 template <typename EventT>
 ev_status unsubscribe_event(bus* b);
@@ -387,8 +396,7 @@ inline void ev_default_log_func(ev_log_data data) {
     buf.reserve(256);
 
     buf += "[";
-    buf += std::format(
-        "{:%Y-%m-%d %H:%M:%S}",
+    buf += std::format("{:%Y-%m-%d %H:%M:%S}",
         std::chrono::time_point_cast<std::chrono::seconds>(std::chrono::system_clock::now()));
     buf += "] ";
 
@@ -441,7 +449,6 @@ struct ev_id {
     ev_status unsubscribe() {
         if (!valid()) return INVALID_SUBSCRIBER_ID;
         auto status = eventus_ns::unsubscribe(_bus_ref, std::move(*this));
-        _bus_ref = nullptr;
         return status;
     }
 
@@ -481,15 +488,17 @@ struct owned_id {
     ev_status unsubscribe() { return handle.unsubscribe(); }
     bool valid() const noexcept { return handle.valid(); }
 
+    // releases the unguarded ev_id from owned_id, owned_id becomes invalid
     ev_id release() && { return std::move(handle); }
-    ev_id release() & = delete;
+    // releases the unguarded ev_id from owned_id, owned_id becomes invalid
+    ev_id release() & { return std::move(handle); }
 
     operator int64_t() const { return handle.id; }
     operator bool() const { return handle.valid(); }
 
     owned_id(const owned_id&) = delete;
     owned_id& operator=(const owned_id&) = delete;
-};
+};  // namespace eventus_ns
 
 // tranforms ev_id into an owned_id, allowing for defer like unsubscription
 inline owned_id ev_id::scoped() && { return {std::move(*this)}; }
@@ -521,9 +530,8 @@ struct thread_pool {
                     eventus_function<void()> task;
                     {
                         std::unique_lock lock(queue_mu);
-                        cv.wait(lock, [this, &st] {
-                            return stop || !tasks.empty() || st.stop_requested();
-                        });
+                        cv.wait(lock,
+                            [this, &st] { return stop || !tasks.empty() || st.stop_requested(); });
                         if ((stop || st.stop_requested()) && tasks.empty()) return;
                         task = std::move(tasks.front());
                         tasks.pop();
@@ -648,7 +656,7 @@ inline void gc(bus* b) {
 
     for (auto it = b->subs.begin(); it != b->subs.end();) {
         if (it->second.empty()) {
-            ev_log(b, DEBUG, "removed empty event: {event} from bus", it->first);
+            ev_log(b, DEBUG, "Removed empty event: {event} from bus", it->first);
             it = b->subs.erase(it);
         } else {
             ++it;
@@ -699,11 +707,11 @@ inline ev_status unsubscribe(bus* b, ev_id&& id) {
     auto it = b->subs.find(id.event_t);
     if (it == b->subs.end()) {
         ev_log(b,
-               ERROR,
-               "Event: {event} is not registered in the bus, can not unsubscribe id: {id} from "
-               "nonexistant event",
-               id.event_t,
-               id.id);
+            ERROR,
+            "Event: {event} is not registered in the bus, can not unsubscribe id: {id} from "
+            "nonexistant event",
+            id.event_t,
+            id.id);
 
         return EVENT_TYPE_NOT_REGISTERED;
     }
@@ -715,10 +723,12 @@ inline ev_status unsubscribe(bus* b, ev_id&& id) {
     if (sub_it != vec.end()) {
         vec.erase(sub_it);
 
-        detail::gc(b);
         ev_log(b, INFO, "Successfully unsubscribed from {event} with id: {id}", id.event_t, id.id);
+        detail::gc(b);
 
-        id = {};
+        id._bus_ref = nullptr;
+        id.id = -1;
+        id.event_t = typeid(void);
 
         return OK;
     }
