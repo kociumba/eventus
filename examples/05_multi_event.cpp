@@ -65,7 +65,7 @@ int main() {
 
     // Demonstrate unsubscribing from multi-subscriber
     std::println("\n=== Unsubscribe multi-handler from EventA only ===");
-    eventus::unsubscribe<EventA>(&b, ids[0].id);
+    eventus::unsubscribe(&b, ids[0]);
 
     std::println("\nPublishing EventA (multi-handler removed, specific handler remains):");
     eventus::publish(&b, EventA{"After unsubscribe"});

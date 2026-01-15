@@ -128,6 +128,9 @@
 #define mutex_scope(mutex) std::lock_guard lock##__LINE__(mutex)
 #endif
 
+#define check_bus(bus_ptr, id) \
+    if (bus_ptr != id._bus_ref) return MISMATCHED_BUSES
+
 #if defined(EVENTUS_NAMESPACE)
 #define eventus_ns EVENTUS_NAMESPACE
 #elif defined(EVENTUS_SHORT_NAMESPACE)
@@ -148,6 +151,8 @@ enum ev_status {
     NO_SUBSCRIBERS_FOR_EVENT_TYPE,
     NO_SUBSCRIBER_WITH_ID,
     INVALID_SUBSCRIBER_ID,
+    MISMATCHED_BUSES,
+    MISMATCHED_EVENT_TYPES,
 };
 
 // use to get a string representation of an eventus state value
@@ -163,6 +168,10 @@ inline const char* status_string(ev_status s) {
             return "NO_SUBSCRIBER_WITH_ID";
         case INVALID_SUBSCRIBER_ID:
             return "INVALID_SUBSCRIBER_ID";
+        case MISMATCHED_BUSES:
+            return "MISMATCHED_BUSES";
+        case MISMATCHED_EVENT_TYPES:
+            return "MISMATCHED_EVENT_TYPES";
         default:
             return "invalid eventus::ev_status value";
     }
@@ -338,12 +347,11 @@ ev_id subscribe(bus* b, F&& func, int32_t priority = 0);
 template <typename... EventTs, typename F>
 std::vector<ev_id> subscribe_multi(bus* b, F&& func, int32_t priority = 0);
 
-ev_status unsubscribe(bus* b, int64_t id, std::type_index t);
+ev_status unsubscribe(bus* b, ev_id&& id);
+ev_status unsubscribe(bus* b, ev_id& id);
 
 template <typename EventT>
-ev_status unsubscribe(bus* b, int64_t id);
-
-inline ev_status unsubscribe(bus* b, int64_t id);
+ev_status unsubscribe(bus* b, ev_id id);
 
 template <typename EventT>
 ev_status unsubscribe_event(bus* b);
@@ -432,7 +440,7 @@ struct ev_id {
 
     ev_status unsubscribe() {
         if (!valid()) return INVALID_SUBSCRIBER_ID;
-        auto status = eventus_ns::unsubscribe(_bus_ref, id, event_t);
+        auto status = eventus_ns::unsubscribe(_bus_ref, std::move(*this));
         _bus_ref = nullptr;
         return status;
     }
@@ -472,6 +480,9 @@ struct owned_id {
     ~owned_id() { handle.unsubscribe(); }
     ev_status unsubscribe() { return handle.unsubscribe(); }
     bool valid() const noexcept { return handle.valid(); }
+
+    ev_id release() && { return std::move(handle); }
+    ev_id release() & = delete;
 
     operator int64_t() const { return handle.id; }
     operator bool() const { return handle.valid(); }
@@ -680,69 +691,53 @@ std::vector<ev_id> subscribe_multi(bus* b, F&& func, int32_t priority) {
     return ids;
 }
 
-// unsubscribes a subscriber using the provided id from the specified event, without template specialization
-inline ev_status unsubscribe(bus* b, int64_t id, std::type_index t) {
+// unsubscribes a subscriber using the provided id, without template specialization
+inline ev_status unsubscribe(bus* b, ev_id&& id) {
+    check_bus(b, id);
     mutex_scope(b->mu);
 
-    auto it = b->subs.find(t);
+    auto it = b->subs.find(id.event_t);
     if (it == b->subs.end()) {
         ev_log(b,
                ERROR,
                "Event: {event} is not registered in the bus, can not unsubscribe id: {id} from "
                "nonexistant event",
-               t,
-               id);
+               id.event_t,
+               id.id);
 
         return EVENT_TYPE_NOT_REGISTERED;
     }
 
     auto& vec = it->second;
     auto sub_it =
-        std::find_if(vec.begin(), vec.end(), [id](const subscriber& s) { return s.id == id; });
+        std::find_if(vec.begin(), vec.end(), [&id](const subscriber& s) { return s.id == id.id; });
 
     if (sub_it != vec.end()) {
         vec.erase(sub_it);
 
         detail::gc(b);
-        ev_log(b, INFO, "Successfully unsubscribed from {event} with id: {id}", t, id);
+        ev_log(b, INFO, "Successfully unsubscribed from {event} with id: {id}", id.event_t, id.id);
+
+        id = {};
 
         return OK;
     }
 
-    ev_log(b, WARNING, "No subscriber with id: {id} registered to {event}", t, id);
+    ev_log(b, WARNING, "No subscriber with id: {id} registered to {event}", id.event_t, id.id);
 
     return NO_SUBSCRIBER_WITH_ID;
+}
+
+inline ev_status unsubscribe(bus* b, ev_id& id) {
+    ev_status status = unsubscribe(b, std::move(id));
+    return status;
 }
 
 // unsubscribes a subscriber using the provided id from the specified event
 template <typename EventT>
-ev_status unsubscribe(bus* b, int64_t id) {
-    return unsubscribe(b, id, typeid(EventT));
-}
-
-// unsubscribes based only on an id, not to be used in performance critical applications
-inline ev_status unsubscribe(bus* b, int64_t id) {
-    mutex_scope(b->mu);
-
-    for (auto it = b->subs.begin(); it != b->subs.end(); ++it) {
-        auto& vec = it->second;
-
-        auto new_end = std::remove_if(
-            vec.begin(), vec.end(), [id](const subscriber& s) { return s.id == id; });
-
-        if (new_end != vec.end()) {
-            vec.erase(new_end, vec.end());
-
-            detail::gc(b);
-            ev_log(b, INFO, "Successfully unsubscribed from {event} with id: {id}", it->first, id);
-
-            return OK;
-        }
-    }
-
-    ev_log(b, WARNING, "No subscriber with id: {id} in the bus", typeid(void), id);
-
-    return NO_SUBSCRIBER_WITH_ID;
+ev_status unsubscribe(bus* b, ev_id id) {
+    if (id.event_t != typeid(EventT)) return MISMATCHED_EVENT_TYPES;
+    return unsubscribe(b, id);
 }
 
 // unsubscribes all subscribers from the specified event
