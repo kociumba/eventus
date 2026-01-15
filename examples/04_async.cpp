@@ -2,6 +2,8 @@
 #include <print>
 #include "common.h"
 
+// This example uses sleep to mock background workload
+// it should be common sense to not write code like this in production
 struct message {
     std::string content;
     int id;
@@ -10,7 +12,7 @@ struct message {
 int main() {
     std::println("=== {} ===\n", __FILE__);
 
-    // Custom thread pool size: bus(thread_pool_size)
+    // If a custom thread pool size is desired use: bus(thread_pool_size)
     auto b = eventus::bus();
 
     // Register handlers in mixed priority order to show they execute by priority
