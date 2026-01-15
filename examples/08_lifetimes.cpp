@@ -29,7 +29,7 @@ int main() {
     std::println("Publish status: {}", eventus::status_string(status));
 
     std::println("\n=== Scenario 2: Pipe Operator & Manual Release ===");
-    eventus::ev_id regular_id;
+    eventus::ev_id regular_id;  // by default ev_id is invalid and will fail any operations
 
     {
         // Using the pipe operator style
