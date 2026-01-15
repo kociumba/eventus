@@ -16,7 +16,7 @@ int main() {
     std::println("=== Using Member Function Syntax ===");
 
     // b.subscribe instead of eventus::subscribe(&b, ...)
-    b.subscribe<const char*>([&](auto* data) {
+    b.subscribe<const char*>([](auto* data) {
         std::println("  Lambda subscriber: '{}'", *data);
         return true;
     });

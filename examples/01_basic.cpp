@@ -13,8 +13,8 @@ int main() {
     auto b = eventus::bus();
 
     // --- Scenario 1: Subscribing with Lambdas ---
-    // We types as events, here 'const char*'
-    eventus::subscribe<const char*>(&b, [&](auto* data) {
+    // We use types as events, here 'const char*'
+    eventus::subscribe<const char*>(&b, [](auto* data) {
         std::println("  Lambda subscriber: '{}'", *data);
         return true;
     });

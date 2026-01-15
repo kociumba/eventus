@@ -94,10 +94,6 @@ int main() {
     std::println("Expected: Medium handler stops propagation, low priority handlers don't run\n");
     eventus::publish(&b, ModifiableEvent{10, "Start"});
 
-    std::println("\n=== Scenario 3: Partial Propagation (starting value=8) ===");
-    std::println("Expected: Reaches some low priority handlers before stopping\n");
-    eventus::publish(&b, ModifiableEvent{8, "Start"});
-
     std::println("\n=== Summary ===");
     std::println("Priority determines execution order: Higher numbers execute first");
     std::println(

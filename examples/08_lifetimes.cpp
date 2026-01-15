@@ -54,7 +54,8 @@ int main() {
     std::println("Publish status: {}", eventus::status_string(status));
 
     // Manual cleanup for the released ID
-    regular_id.unsubscribe();
+    auto unsub_status = regular_id.unsubscribe();
+    std::println("Unsubscribe status: {}", eventus::status_string(unsub_status));
 
     std::println("\n=== Summary ===");
     std::println("owned_id: Unsubscribes automatically when it is destroyed");

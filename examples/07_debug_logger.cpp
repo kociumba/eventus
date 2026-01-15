@@ -1,6 +1,5 @@
 #define EVENTUS_DEBUG_LOG
 #include <eventus>
-#include <iostream>
 #include <print>
 
 struct user_action {
