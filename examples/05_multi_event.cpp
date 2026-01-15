@@ -30,7 +30,7 @@ int main() {
     });
 
     std::println(
-        "Multi-handler registered for EventA (ID: {}) and EventB (ID: {})\n", ids[0], ids[1]);
+        "Multi-handler registered for EventA (ID: {}) and EventB (ID: {})\n", ids[0].id, ids[1].id);
 
     // Additional specific subscribers
     eventus::subscribe<EventA>(&b, [](EventA* e) {
@@ -65,7 +65,7 @@ int main() {
 
     // Demonstrate unsubscribing from multi-subscriber
     std::println("\n=== Unsubscribe multi-handler from EventA only ===");
-    eventus::unsubscribe<EventA>(&b, ids[0]);
+    eventus::unsubscribe<EventA>(&b, ids[0].id);
 
     std::println("\nPublishing EventA (multi-handler removed, specific handler remains):");
     eventus::publish(&b, EventA{"After unsubscribe"});
