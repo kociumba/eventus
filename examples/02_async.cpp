@@ -20,9 +20,9 @@ int main() {
         &b,
         [](message* msg) {
             std::println("  [Priority 5] Handler A: '{}' (id: {}) on thread: {}",
-                         msg->content,
-                         msg->id,
-                         std::this_thread::get_id());
+                msg->content,
+                msg->id,
+                std::this_thread::get_id());
             ev_sleep(50);
             return true;
         },
@@ -33,9 +33,9 @@ int main() {
         &b,
         [](message* msg) {
             std::println("  [Priority 10] Handler B: '{}' (id: {}) on thread: {}",
-                         msg->content,
-                         msg->id,
-                         std::this_thread::get_id());
+                msg->content,
+                msg->id,
+                std::this_thread::get_id());
             ev_sleep(50);
             return true;
         },

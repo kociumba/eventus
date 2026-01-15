@@ -11,7 +11,8 @@ ReflowComments: false
 
 BinPackArguments: false
 BinPackParameters: OnePerLine
-AlignAfterOpenBracket: Align
+# AlignAfterOpenBracket: Align
+AlignAfterOpenBracket: DontAlign
 AllowShortIfStatementsOnASingleLine: WithoutElse
 AllowShortFunctionsOnASingleLine: All
 AllowShortBlocksOnASingleLine: Always
