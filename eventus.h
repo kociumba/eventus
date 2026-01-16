@@ -356,6 +356,13 @@ ev_id subscribe(bus* b, F&& func, int32_t priority = 0);
 template <typename... EventTs, typename F>
 std::array<ev_id, sizeof...(EventTs)> subscribe_multi(bus* b, F&& func, int32_t priority = 0);
 
+template <typename EventT, typename F>
+    requires std::invocable<F, EventT*>
+ev_id once(bus* b, F&& func, int32_t priority = 0);
+
+template <typename... EventTs, typename F>
+std::array<ev_id, sizeof...(EventTs)> once_multi(bus* b, F&& func, int32_t priority = 0);
+
 ev_status unsubscribe(bus* b, ev_id&& id);
 ev_status unsubscribe(bus* b, ev_id& id);
 
@@ -464,8 +471,9 @@ struct ev_id {
 
     ev_status unsubscribe() {
         if (!valid()) return INVALID_SUBSCRIBER_ID;
+        auto is_active_copy = _is_active;  // couse of move semantics
         auto status = eventus_ns::unsubscribe(_bus_ref, std::move(*this));
-        if (_is_active) { _is_active->store(false, std::memory_order_release); }
+        if (is_active_copy) { is_active_copy->store(false, std::memory_order_release); }
         return status;
     }
 
@@ -627,6 +635,17 @@ struct bus {
         return eventus_ns::subscribe_multi<EventTs...>(this, std::forward<F>(func), priority);
     }
 
+    template <typename EventT, typename F>
+        requires std::invocable<F, EventT*>
+    ev_id once(F&& func, int32_t priority) {
+        return eventus_ns::once<EventT>(this, std::forward<F>(func), priority);
+    }
+
+    template <typename... EventTs, typename F>
+    std::array<ev_id, sizeof...(EventTs)> once_multi(F&& func, int32_t priority) {
+        return eventus_ns::once_multi<EventTs...>(this, std::forward<F>(func), priority);
+    }
+
     ev_status unsubscribe(ev_id&& id) { return eventus_ns::unsubscribe(this, std::move(id)); }
     ev_status unsubscribe(ev_id& id) { return eventus_ns::unsubscribe(this, std::move(id)); }
 
@@ -730,7 +749,7 @@ std::array<ev_id, sizeof...(EventTs)> subscribe_multi(bus* b, F&& func, int32_t 
     return std::array<ev_id, sizeof...(EventTs)>{subscribe<EventTs>(b, func, priority)...};
 }
 
-// subscribes a handler that will remove itself after a single run
+// subscribes a handler for EventT that will remove itself after a single run
 template <typename EventT, typename F>
     requires std::invocable<F, EventT*>
 ev_id once(bus* b, F&& func, int32_t priority) {
@@ -749,13 +768,19 @@ ev_id once(bus* b, F&& func, int32_t priority) {
     return handle->clone();
 }
 
+// subscribes a handler for EventT... that will remove itself after a single run
+template <typename... EventTs, typename F>
+std::array<ev_id, sizeof...(EventTs)> once_multi(bus* b, F&& func, int32_t priority) {
+    return std::array<ev_id, sizeof...(EventTs)>{once<EventTs>(b, func, priority)...};
+}
+
 // unsubscribes a subscriber using the provided id, without template specialization
 inline ev_status unsubscribe(bus* b, ev_id&& id) {
-    check_bus(b, id);
+    check_bus(b, id);  // handle non matching buses
     mutex_scope(b->mu);
-    if (!id.valid()) {
+    if (!id.valid()) {  // handle invalidated clones
         ev_log(b,
-            ERROR,
+            WARNING,
             "Tried to unsubscribe an invalid id (raw data: {id} | {event})",
             id.event_t,
             id.id);

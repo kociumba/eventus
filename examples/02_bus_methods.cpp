@@ -24,6 +24,12 @@ int main() {
     // Subscribing a free function via member method
     b.subscribe<const char*>(sub_func);
 
+    // Subscribing to a single instance of an event
+    eventus::once<const char*>(&b, [](auto* data) {
+        std::println("  Once subscriber: '{}'", *data);
+        return true;
+    });
+
     // b.publish instead of eventus::publish(&b, ...)
     std::println("Publishing 'gabagool':");
     b.publish("gabagool");

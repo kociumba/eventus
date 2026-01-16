@@ -22,7 +22,13 @@ int main() {
     // --- Scenario 2: Subscribing with Function Pointers ---
     eventus::subscribe<const char*>(&b, sub_func);
 
-    // --- Scenario 3: Publishing Events ---
+    // --- Scenario 3: Subscribing to a single instance of an event ---
+    eventus::once<const char*>(&b, [](auto* data) {
+        std::println("  Once subscriber: '{}'", *data);
+        return true;
+    });
+
+    // --- Scenario 4: Publishing Events ---
     std::println("=== Initial State: Two subscribers registered ===");
 
     std::println("Publishing 'gabagool':");
