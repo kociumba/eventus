@@ -1,4 +1,4 @@
-// eventus.h - v0.2.0 - kociumba 2026
+// eventus.h - v0.2.1 - kociumba 2026
 //
 // INFO:
 //  To use eventus you don't need to define an implementation macro but there are configuration macros
@@ -49,6 +49,7 @@
 #include <version>
 
 #include <algorithm>
+#include <array>
 #include <atomic>
 #include <concepts>
 #include <functional>
@@ -353,7 +354,7 @@ template <typename EventT, typename F>
 ev_id subscribe(bus* b, F&& func, int32_t priority = 0);
 
 template <typename... EventTs, typename F>
-std::vector<ev_id> subscribe_multi(bus* b, F&& func, int32_t priority = 0);
+std::array<ev_id, sizeof...(EventTs)> subscribe_multi(bus* b, F&& func, int32_t priority = 0);
 
 ev_status unsubscribe(bus* b, ev_id&& id);
 ev_status unsubscribe(bus* b, ev_id& id);
@@ -436,39 +437,65 @@ struct ev_id {
     int64_t id = -1;
     std::type_index event_t = typeid(void);
 
+    // id syncronisation to enable controlled copies
+    mutable std::shared_ptr<std::atomic<bool>> _is_active = nullptr;
+
     ev_id() = default;
-    ev_id(bus* b, int64_t i, std::type_index t) : _bus_ref(b), id(i), event_t(t) {}
+    ev_id(bus* b, int64_t i, std::type_index t)
+        : _bus_ref(b), id(i), event_t(t), _is_active(std::make_shared<std::atomic<bool>>(true)) {}
 
     operator int64_t() const { return id; }
 
-    bool valid() const noexcept { return _bus_ref != nullptr && id != -1; }
+    bool valid() const noexcept {
+        return _bus_ref != nullptr && id != -1 && _is_active &&
+               _is_active->load(std::memory_order_acquire);
+    }
 
     operator bool() const { return valid(); }
+
+    ev_id clone() const {
+        ev_id copy;
+        copy._bus_ref = _bus_ref;
+        copy.id = id;
+        copy.event_t = event_t;
+        copy._is_active = _is_active;
+        return copy;
+    }
 
     ev_status unsubscribe() {
         if (!valid()) return INVALID_SUBSCRIBER_ID;
         auto status = eventus_ns::unsubscribe(_bus_ref, std::move(*this));
+        if (_is_active) { _is_active->store(false, std::memory_order_release); }
         return status;
     }
 
     owned_id scoped() &&;
     owned_id scoped() & = delete;
 
-    ev_id(ev_id&& other) noexcept : _bus_ref(other._bus_ref), id(other.id), event_t(other.event_t) {
+    ev_id(ev_id&& other) noexcept
+        : _bus_ref(other._bus_ref),
+          id(other.id),
+          event_t(other.event_t),
+          _is_active(std::move(other._is_active)) {
         other._bus_ref = nullptr;
         other.id = -1;
         other.event_t = typeid(void);
+        other._is_active = nullptr;
     }
 
     ev_id& operator=(ev_id&& other) noexcept {
         if (this != &other) {
             if (valid()) unsubscribe();
+
             _bus_ref = other._bus_ref;
             id = other.id;
             event_t = other.event_t;
+            _is_active = std::move(other._is_active);
+
             other._bus_ref = nullptr;
             other.id = -1;
             other.event_t = typeid(void);
+            other._is_active = nullptr;
         }
         return *this;
     }
@@ -486,6 +513,8 @@ struct owned_id {
     ~owned_id() { handle.unsubscribe(); }
     ev_status unsubscribe() { return handle.unsubscribe(); }
     bool valid() const noexcept { return handle.valid(); }
+
+    owned_id clone() const { return handle.clone().scoped(); }
 
     // releases the unguarded ev_id from owned_id, owned_id becomes invalid
     ev_id release() && { return std::move(handle); }
@@ -594,7 +623,7 @@ struct bus {
     }
 
     template <typename... EventTs, typename F>
-    std::vector<ev_id> subscribe_multi(F&& func, int32_t priority = 0) {
+    std::array<ev_id, sizeof...(EventTs)> subscribe_multi(F&& func, int32_t priority = 0) {
         return eventus_ns::subscribe_multi<EventTs...>(this, std::forward<F>(func), priority);
     }
 
@@ -697,19 +726,41 @@ ev_id subscribe(bus* b, F&& func, int32_t priority) {
 
 // subscribe to an event EventT..., priority determines subscriber execution order on publish
 template <typename... EventTs, typename F>
-std::vector<ev_id> subscribe_multi(bus* b, F&& func, int32_t priority) {
-    std::vector<ev_id> ids;
-    ids.reserve(sizeof...(EventTs));
+std::array<ev_id, sizeof...(EventTs)> subscribe_multi(bus* b, F&& func, int32_t priority) {
+    return std::array<ev_id, sizeof...(EventTs)>{subscribe<EventTs>(b, func, priority)...};
+}
 
-    (ids.push_back(subscribe<EventTs>(b, func, priority)), ...);
+// subscribes a handler that will remove itself after a single run
+template <typename EventT, typename F>
+    requires std::invocable<F, EventT*>
+ev_id once(bus* b, F&& func, int32_t priority) {
+    auto handle = std::make_shared<ev_id>();
+    auto id = subscribe<EventT>(
+        b,
+        [func = std::forward<F>(func), handle](EventT* e) mutable -> bool {
+            bool r = func(e);
+            handle->unsubscribe();
+            return r;
+        },
+        priority);
 
-    return ids;
+    *handle = std::move(id);
+
+    return handle->clone();
 }
 
 // unsubscribes a subscriber using the provided id, without template specialization
 inline ev_status unsubscribe(bus* b, ev_id&& id) {
     check_bus(b, id);
     mutex_scope(b->mu);
+    if (!id.valid()) {
+        ev_log(b,
+            ERROR,
+            "Tried to unsubscribe an invalid id (raw data: {id} | {event})",
+            id.event_t,
+            id.id);
+        return INVALID_SUBSCRIBER_ID;
+    }
 
     auto it = b->subs.find(id.event_t);
     if (it == b->subs.end()) {
