@@ -471,7 +471,7 @@ struct ev_id {
 
     ev_status unsubscribe() {
         if (!valid()) return INVALID_SUBSCRIBER_ID;
-        auto is_active_copy = _is_active;  // couse of move semantics
+        auto is_active_copy = _is_active;  // because of move semantics
         auto status = eventus_ns::unsubscribe(_bus_ref, std::move(*this));
         if (is_active_copy) { is_active_copy->store(false, std::memory_order_release); }
         return status;
@@ -637,12 +637,12 @@ struct bus {
 
     template <typename EventT, typename F>
         requires std::invocable<F, EventT*>
-    ev_id once(F&& func, int32_t priority) {
+    ev_id once(F&& func, int32_t priority = 0) {
         return eventus_ns::once<EventT>(this, std::forward<F>(func), priority);
     }
 
     template <typename... EventTs, typename F>
-    std::array<ev_id, sizeof...(EventTs)> once_multi(F&& func, int32_t priority) {
+    std::array<ev_id, sizeof...(EventTs)> once_multi(F&& func, int32_t priority = 0) {
         return eventus_ns::once_multi<EventTs...>(this, std::forward<F>(func), priority);
     }
 

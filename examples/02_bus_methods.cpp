@@ -7,6 +7,7 @@ bool sub_func(const char** data) {
     return true;
 }
 
+// This is the same example as 01_basic, but rewritten to use the bus methods
 int main() {
     std::println("=== {} ===\n", __FILE__);
 
@@ -41,7 +42,9 @@ int main() {
     std::println(
         "EVENTUS_BUS_METHODS: Must be defined before including <eventus> for bus methods to be "
         "included");
-    std::println("Member Syntax: b.publish(data) is shorthand for eventus::publish(&b, data)");
+    std::println(
+        "Member Syntax: b.publish(data) is shorthand for eventus::publish(&b, data) and so on for "
+        "all methods");
     std::println(
         "Paradigm: This makes eventus more oop-ish, for a more functional style see 01_basic");
     std::println("\n");
