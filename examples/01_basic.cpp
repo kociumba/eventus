@@ -29,7 +29,7 @@ int main() {
     });
 
     // --- Scenario 4: Publishing Events ---
-    std::println("=== Initial State: Two subscribers registered ===");
+    std::println("=== Initial State: Three subscribers registered (one is once-only) ===");
 
     std::println("Publishing 'gabagool':");
     eventus::publish(&b, "gabagool");
@@ -40,11 +40,13 @@ int main() {
     std::println("\n=== Summary ===");
     std::println("eventus::bus: The central communication hub for your application");
     std::println("eventus::subscribe: Registers a callback for a specific type T");
+    std::println(
+        "eventus::once: Registers a one-time callback that auto-unsubscribes after the first "
+        "recieved event");
     std::println("eventus::publish: Distributes data to all listeners of that type");
     std::println(
         "Functional Style: Always passes &bus as the first argument (see 02_bus_methods for "
         "other style)");
     std::println("\n");
-
     return 0;
 }
