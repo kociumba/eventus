@@ -353,6 +353,10 @@ template <typename EventT, typename F>
     requires std::invocable<F, EventT*>
 ev_id subscribe(bus* b, F&& func, int32_t priority = 0);
 
+template <typename F>
+    requires std::invocable<F>
+ev_id subscribe(bus* b, std::type_index event_t, F&& func, int32_t priority = 0);
+
 template <typename... EventTs, typename F>
 std::array<ev_id, sizeof...(EventTs)> subscribe_multi(bus* b, F&& func, int32_t priority = 0);
 
@@ -741,6 +745,12 @@ ev_id subscribe(bus* b, F&& func, int32_t priority) {
     ev_log(b, INFO, "Successfully subscribed to {event} with id: {id}", typeid(EventT), id);
 
     return {b, id, typeid(EventT)};
+}
+
+template <typename F>
+    requires std::invocable<F>
+ev_id subscribe(bus* b, std::type_index event_t, F&& func, int32_t priority) {
+    /* TODO: subscriber also needs to be able to construct without comptime templates */
 }
 
 // subscribe to an event EventT..., priority determines subscriber execution order on publish
